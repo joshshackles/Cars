@@ -1,0 +1,880 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum RideRequestStatus {
+  DRAFT
+  REQUESTED
+  PENDING_REVIEW
+  PENDING_ASSIGNMENT
+  SCHEDULED
+  COMPLETED
+  CANCELED
+  DENIED
+  UNRESOLVED
+}
+
+enum TripLegStatus {
+  PENDING
+  READY_TO_ASSIGN
+  ASSIGNED
+  DRIVER_CONFIRMED
+  IN_PROGRESS
+  EN_ROUTE
+  ARRIVED
+  COMPLETED
+  CANCELED
+  NO_SHOW
+  NEEDS_ATTENTION
+}
+
+enum AssignmentStatus {
+  OFFERED
+  ACCEPTED
+  DECLINED
+  CANCELED
+  COMPLETED
+}
+
+enum MileageStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  BATCHED
+  PAID
+}
+
+enum ReimbursementStatus {
+  DRAFT
+  REVIEW
+  APPROVED
+  PROCESSING
+  PAID
+  CANCELED
+}
+
+enum CommunicationType {
+  PHONE
+  SMS
+  EMAIL
+  VOICEMAIL
+  NOTE
+}
+
+enum IncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IncidentStatus {
+  OPEN
+  REVIEWING
+  RESOLVED
+  CLOSED
+}
+
+enum DocumentType {
+  RIDER_INTAKE
+  DRIVER_LICENSE
+  INSURANCE
+  BACKGROUND_CHECK
+  CONSENT
+  INCIDENT_ATTACHMENT
+  REIMBURSEMENT_SUPPORT
+  OTHER
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+enum AvailabilityStatus {
+  AVAILABLE
+  UNAVAILABLE
+  TENTATIVE
+}
+
+model Organization {
+  id        String    @id @default(cuid())
+  name      String
+  slug      String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  deletedById String?
+
+  users                User[]
+  memberships          Membership[]
+  roles                Role[]
+  invitations          Invitation[]
+  riders               Rider[]
+  drivers              Driver[]
+  driverAvailabilities DriverAvailability[]
+  destinations         Destination[]
+  rideRequests         RideRequest[]
+  tripLegs             TripLeg[]
+  assignments          Assignment[]
+  mileageRecords       MileageRecord[]
+  reimbursementBatches ReimbursementBatch[]
+  communicationLogs    CommunicationLog[]
+  incidents            Incident[]
+  documents            Document[]
+  fundingSources       FundingSource[]
+  programSettings      ProgramSetting[]
+  auditLogs            AuditLog[]
+  statusHistories      StatusHistory[]
+
+  @@index([deletedAt])
+}
+
+model User {
+  id             String    @id @default(cuid())
+  organizationId String?
+  email          String    @unique
+  name           String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+  deletedById    String?
+
+  organization    Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  memberships     Membership[]
+  sentInvitations Invitation[]  @relation("InvitationInvitedBy")
+  auditLogs       AuditLog[]
+
+  @@index([organizationId])
+  @@index([deletedAt])
+}
+
+model Membership {
+  id             String    @id @default(cuid())
+  userId         String
+  organizationId String
+  roleId         String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  createdById    String?
+  updatedById    String?
+  deletedAt      DateTime?
+  deletedById    String?
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role         Role         @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@index([roleId])
+  @@index([deletedAt])
+}
+
+model Role {
+  id             String    @id @default(cuid())
+  organizationId String
+  key            String
+  name           String
+  description    String?
+  isSystem       Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  createdById    String?
+  updatedById    String?
+  deletedAt      DateTime?
+  deletedById    String?
+
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  memberships     Membership[]
+  rolePermissions RolePermission[]
+  invitations     Invitation[]
+
+  @@unique([organizationId, key])
+  @@index([organizationId])
+  @@index([key])
+  @@index([deletedAt])
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  rolePermissions RolePermission[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  createdAt    DateTime @default(now())
+  createdById  String?
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+model Invitation {
+  id             String           @id @default(cuid())
+  organizationId String
+  email          String
+  roleId         String
+  invitedById    String?
+  status         InvitationStatus @default(PENDING)
+  tokenHash      String?          @unique
+  expiresAt      DateTime?
+  acceptedAt     DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  createdById    String?
+  updatedById    String?
+  deletedAt      DateTime?
+  deletedById    String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role         Role         @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  invitedBy    User?        @relation("InvitationInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([email])
+  @@index([roleId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model Rider {
+  id             String      @id @default(cuid())
+  organizationId String
+  displayName    String
+  firstName      String
+  lastName       String
+  phone          String?
+  email          String?
+  addressLine1   String?
+  addressLine2   String?
+  city           String?
+  county         String?
+  state          String?
+  postalCode     String?
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  communicationPreference String?
+  status         String      @default("active")
+  mobilityNotes  String?
+  riderNotes     String?
+  sensitiveNotes String?
+  eligibilityConfirmed Boolean @default(false)
+  intakeDate     DateTime?
+  pickupInstructions String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  createdById    String?
+  updatedById    String?
+  deletedAt      DateTime?
+  deletedById    String?
+
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  rideRequests      RideRequest[]
+  communicationLogs CommunicationLog[]
+  incidents         Incident[]
+  documents         Document[]
+  auditLogs         AuditLog[]
+  statusHistories   StatusHistory[]
+
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([organizationId, county])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model Driver {
+  id             String       @id @default(cuid())
+  organizationId String
+  displayName    String
+  firstName      String
+  lastName       String
+  phone          String?
+  email          String?
+  addressLine1   String?
+  addressLine2   String?
+  city           String?
+  state          String?
+  postalCode     String?
+  countiesServed Json?
+  preferredRideTypes Json?
+  vehicleMake    String?
+  vehicleModel   String?
+  vehicleYear    Int?
+  licenseVerificationDate DateTime?
+  insuranceVerificationDate DateTime?
+  backgroundCheckStatus String?
+  onboardingStatus String?
+  reimbursementPreference String?
+  status         String       @default("pending_onboarding")
+  vehicleLabel   String?
+  driverNotes    String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  createdById    String?
+  updatedById    String?
+  deletedAt      DateTime?
+  deletedById    String?
+
+  organization      Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  availabilities    DriverAvailability[]
+  assignments       Assignment[]
+  mileageRecords    MileageRecord[]
+  reimbursementBatches ReimbursementBatch[]
+  communicationLogs CommunicationLog[]
+  incidents         Incident[]
+  documents         Document[]
+  auditLogs         AuditLog[]
+  statusHistories   StatusHistory[]
+
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([organizationId, email])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model DriverAvailability {
+  id             String             @id @default(cuid())
+  organizationId String
+  driverId       String
+  status         AvailabilityStatus @default(AVAILABLE)
+  availabilityType String      @default("one_time")
+  recurrenceRule   String?
+  blackoutDate     DateTime?
+  preferredCounties Json?
+  maxDistanceMiles Int?
+  startsAt       DateTime
+  endsAt         DateTime
+  notes          String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  createdById    String?
+  updatedById    String?
+  deletedAt      DateTime?
+  deletedById    String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  driver       Driver       @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([driverId])
+  @@index([status])
+  @@index([startsAt])
+  @@index([endsAt])
+  @@index([deletedAt])
+}
+
+model Destination {
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String
+  destinationType String?
+  addressLine1   String
+  addressLine2   String?
+  city           String
+  state          String
+  postalCode     String
+  latitude       Decimal?  @db.Decimal(9, 6)
+  longitude      Decimal?  @db.Decimal(9, 6)
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  createdById    String?
+  updatedById    String?
+  deletedAt      DateTime?
+  deletedById    String?
+
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  originTripLegs   TripLeg[]    @relation("TripLegOrigin")
+  dropoffTripLegs  TripLeg[]    @relation("TripLegDropoff")
+
+  @@index([organizationId])
+  @@index([destinationType])
+  @@index([deletedAt])
+}
+
+model RideRequest {
+  id              String            @id @default(cuid())
+  organizationId  String
+  riderId         String
+  fundingSourceId String?
+  status          RideRequestStatus @default(REQUESTED)
+  purpose         String
+  requestSource   String?
+  requestedAt     DateTime          @default(now())
+  neededAt        DateTime
+  pickupWindowStart DateTime?
+  pickupWindowEnd DateTime?
+  returnTripNeeded Boolean           @default(false)
+  multipleStops    Boolean           @default(false)
+  recurringRide    Boolean           @default(false)
+  specialInstructions String?
+  internalNotes    String?
+  warnings         Json?
+  notes           String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  createdById     String?
+  updatedById     String?
+  deletedAt       DateTime?
+  deletedById     String?
+
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  rider             Rider              @relation(fields: [riderId], references: [id], onDelete: Restrict)
+  fundingSource     FundingSource?     @relation(fields: [fundingSourceId], references: [id], onDelete: SetNull)
+  tripLegs          TripLeg[]
+  communicationLogs CommunicationLog[]
+  incidents         Incident[]
+  documents         Document[]
+  auditLogs         AuditLog[]
+  statusHistories   StatusHistory[]
+
+  @@index([organizationId])
+  @@index([riderId])
+  @@index([fundingSourceId])
+  @@index([status])
+  @@index([neededAt])
+  @@index([organizationId, status, neededAt])
+  @@index([organizationId, recurringRide])
+  @@index([deletedAt])
+}
+
+model TripLeg {
+  id                   String        @id @default(cuid())
+  organizationId       String
+  rideRequestId        String
+  originDestinationId  String?
+  dropoffDestinationId String?
+  pickupAddress        String?
+  pickupCity           String?
+  pickupCounty         String?
+  pickupState          String?
+  pickupPostalCode     String?
+  dropoffAddress       String?
+  dropoffCity          String?
+  dropoffCounty        String?
+  dropoffState         String?
+  dropoffPostalCode    String?
+  sequence             Int           @default(1)
+  status               TripLegStatus @default(PENDING)
+  scheduledPickupAt    DateTime
+  scheduledDropoffAt   DateTime?
+  completedAt          DateTime?
+  estimatedMiles       Decimal?      @db.Decimal(8, 2)
+  notes                String?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  createdById          String?
+  updatedById          String?
+  deletedAt            DateTime?
+  deletedById          String?
+
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  rideRequest       RideRequest        @relation(fields: [rideRequestId], references: [id], onDelete: Cascade)
+  originDestination Destination?       @relation("TripLegOrigin", fields: [originDestinationId], references: [id], onDelete: SetNull)
+  dropoffDestination Destination?      @relation("TripLegDropoff", fields: [dropoffDestinationId], references: [id], onDelete: SetNull)
+  assignment        Assignment?
+  mileageRecord     MileageRecord?
+  communicationLogs CommunicationLog[]
+  incidents         Incident[]
+  documents         Document[]
+  auditLogs         AuditLog[]
+  statusHistories   StatusHistory[]
+
+  @@index([organizationId])
+  @@index([rideRequestId])
+  @@index([status])
+  @@index([scheduledPickupAt])
+  @@index([scheduledDropoffAt])
+  @@index([organizationId, status, scheduledPickupAt])
+  @@index([organizationId, pickupCounty])
+  @@index([organizationId, dropoffCounty])
+  @@index([deletedAt])
+}
+
+model Assignment {
+  id             String           @id @default(cuid())
+  organizationId String
+  tripLegId      String           @unique
+  driverId       String
+  status         AssignmentStatus @default(OFFERED)
+  offeredAt      DateTime         @default(now())
+  respondedAt    DateTime?
+  notes          String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  createdById    String?
+  updatedById    String?
+  deletedAt      DateTime?
+  deletedById    String?
+
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tripLeg           TripLeg            @relation(fields: [tripLegId], references: [id], onDelete: Cascade)
+  driver            Driver             @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  mileageRecord     MileageRecord?
+  communicationLogs CommunicationLog[]
+  incidents         Incident[]
+  documents         Document[]
+  auditLogs         AuditLog[]
+  statusHistories   StatusHistory[]
+
+  @@index([organizationId])
+  @@index([driverId])
+  @@index([status])
+  @@index([offeredAt])
+  @@index([deletedAt])
+}
+
+model MileageRecord {
+  id                    String        @id @default(cuid())
+  organizationId        String
+  tripLegId             String        @unique
+  assignmentId          String?       @unique
+  driverId              String
+  reimbursementBatchId  String?
+  status                MileageStatus @default(DRAFT)
+  serviceDate           DateTime
+  estimatedMiles        Decimal?      @db.Decimal(8, 2)
+  submittedMiles        Decimal?      @db.Decimal(8, 2)
+  miles                 Decimal       @db.Decimal(8, 2)
+  rateCents             Int
+  amountCents           Int
+  submittedAt           DateTime?
+  approvedAt            DateTime?
+  rejectedAt            DateTime?
+  rejectionReason       String?
+  adjustmentReason      String?
+  paidAt                DateTime?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  createdById           String?
+  updatedById           String?
+  deletedAt             DateTime?
+  deletedById           String?
+
+  organization       Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tripLeg            TripLeg              @relation(fields: [tripLegId], references: [id], onDelete: Cascade)
+  assignment         Assignment?          @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  driver             Driver               @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  reimbursementBatch ReimbursementBatch?  @relation(fields: [reimbursementBatchId], references: [id], onDelete: SetNull)
+  documents          Document[]
+  auditLogs          AuditLog[]
+  statusHistories    StatusHistory[]
+
+  @@index([organizationId])
+  @@index([driverId])
+  @@index([reimbursementBatchId])
+  @@index([status])
+  @@index([serviceDate])
+  @@index([organizationId, status, serviceDate])
+  @@index([deletedAt])
+}
+
+model ReimbursementBatch {
+  id             String              @id @default(cuid())
+  organizationId String
+  driverId       String
+  batchNumber    String
+  status         ReimbursementStatus @default(DRAFT)
+  periodStart    DateTime
+  periodEnd      DateTime
+  tripCount      Int                 @default(0)
+  rateCents      Int                 @default(0)
+  totalMiles     Decimal             @default(0) @db.Decimal(10, 2)
+  totalCents     Int                 @default(0)
+  approvedAt     DateTime?
+  paymentStatus  String              @default("pending")
+  paidAt         DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  createdById    String?
+  updatedById    String?
+  deletedAt      DateTime?
+  deletedById    String?
+
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  driver            Driver             @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  mileageRecords    MileageRecord[]
+  communicationLogs CommunicationLog[]
+  documents         Document[]
+  auditLogs         AuditLog[]
+  statusHistories   StatusHistory[]
+
+  @@unique([organizationId, batchNumber])
+  @@index([organizationId])
+  @@index([driverId])
+  @@index([status])
+  @@index([periodStart])
+  @@index([periodEnd])
+  @@index([deletedAt])
+}
+
+model CommunicationLog {
+  id                   String            @id @default(cuid())
+  organizationId       String
+  type                 CommunicationType
+  subject              String?
+  body                 String
+  occurredAt           DateTime          @default(now())
+  riderId              String?
+  driverId             String?
+  rideRequestId        String?
+  tripLegId            String?
+  assignmentId         String?
+  reimbursementBatchId String?
+  incidentId           String?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  createdById          String?
+  updatedById          String?
+  deletedAt            DateTime?
+  deletedById          String?
+
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  rider              Rider?              @relation(fields: [riderId], references: [id], onDelete: SetNull)
+  driver             Driver?             @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  rideRequest        RideRequest?        @relation(fields: [rideRequestId], references: [id], onDelete: SetNull)
+  tripLeg            TripLeg?            @relation(fields: [tripLegId], references: [id], onDelete: SetNull)
+  assignment         Assignment?         @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  reimbursementBatch ReimbursementBatch? @relation(fields: [reimbursementBatchId], references: [id], onDelete: SetNull)
+  incident           Incident?           @relation(fields: [incidentId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([type])
+  @@index([occurredAt])
+  @@index([riderId])
+  @@index([driverId])
+  @@index([rideRequestId])
+  @@index([tripLegId])
+  @@index([assignmentId])
+  @@index([deletedAt])
+}
+
+model Incident {
+  id             String           @id @default(cuid())
+  organizationId String
+  severity       IncidentSeverity @default(LOW)
+  status         IncidentStatus   @default(OPEN)
+  summary        String
+  details        String?
+  occurredAt     DateTime         @default(now())
+  riderId        String?
+  driverId       String?
+  rideRequestId  String?
+  tripLegId      String?
+  assignmentId   String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  createdById    String?
+  updatedById    String?
+  deletedAt      DateTime?
+  deletedById    String?
+
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  rider             Rider?             @relation(fields: [riderId], references: [id], onDelete: SetNull)
+  driver            Driver?            @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  rideRequest       RideRequest?       @relation(fields: [rideRequestId], references: [id], onDelete: SetNull)
+  tripLeg           TripLeg?           @relation(fields: [tripLegId], references: [id], onDelete: SetNull)
+  assignment        Assignment?        @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  communicationLogs CommunicationLog[]
+  documents         Document[]
+  auditLogs         AuditLog[]
+  statusHistories   StatusHistory[]
+
+  @@index([organizationId])
+  @@index([severity])
+  @@index([status])
+  @@index([occurredAt])
+  @@index([riderId])
+  @@index([driverId])
+  @@index([rideRequestId])
+  @@index([tripLegId])
+  @@index([deletedAt])
+}
+
+model Document {
+  id                   String       @id @default(cuid())
+  organizationId       String
+  type                 DocumentType
+  title                String
+  storageKey           String
+  mimeType             String?
+  sizeBytes            Int?
+  riderId              String?
+  driverId             String?
+  rideRequestId        String?
+  tripLegId            String?
+  assignmentId         String?
+  mileageRecordId      String?
+  reimbursementBatchId String?
+  incidentId           String?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+  createdById          String?
+  updatedById          String?
+  deletedAt            DateTime?
+  deletedById          String?
+
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  rider              Rider?              @relation(fields: [riderId], references: [id], onDelete: SetNull)
+  driver             Driver?             @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  rideRequest        RideRequest?        @relation(fields: [rideRequestId], references: [id], onDelete: SetNull)
+  tripLeg            TripLeg?            @relation(fields: [tripLegId], references: [id], onDelete: SetNull)
+  assignment         Assignment?         @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  mileageRecord      MileageRecord?      @relation(fields: [mileageRecordId], references: [id], onDelete: SetNull)
+  reimbursementBatch ReimbursementBatch? @relation(fields: [reimbursementBatchId], references: [id], onDelete: SetNull)
+  incident           Incident?           @relation(fields: [incidentId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([type])
+  @@index([riderId])
+  @@index([driverId])
+  @@index([rideRequestId])
+  @@index([tripLegId])
+  @@index([deletedAt])
+}
+
+model FundingSource {
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String
+  code           String
+  description    String?
+  active         Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  createdById    String?
+  updatedById    String?
+  deletedAt      DateTime?
+  deletedById    String?
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  rideRequests RideRequest[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@index([active])
+  @@index([deletedAt])
+}
+
+model ProgramSetting {
+  id             String    @id @default(cuid())
+  organizationId String
+  category       String
+  key            String
+  label          String
+  description    String?
+  value          Json
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  createdById    String?
+  updatedById    String?
+  deletedAt      DateTime?
+  deletedById    String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, key])
+  @@index([organizationId])
+  @@index([category])
+  @@index([deletedAt])
+}
+
+model AuditLog {
+  id                   String   @id @default(cuid())
+  organizationId       String
+  actorUserId          String?
+  action               String
+  entityType           String
+  entityId             String
+  metadata             Json?
+  riderId              String?
+  driverId             String?
+  rideRequestId        String?
+  tripLegId            String?
+  assignmentId         String?
+  mileageRecordId      String?
+  reimbursementBatchId String?
+  incidentId           String?
+  createdAt            DateTime @default(now())
+
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actorUser          User?               @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  rider              Rider?              @relation(fields: [riderId], references: [id], onDelete: SetNull)
+  driver             Driver?             @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  rideRequest        RideRequest?        @relation(fields: [rideRequestId], references: [id], onDelete: SetNull)
+  tripLeg            TripLeg?            @relation(fields: [tripLegId], references: [id], onDelete: SetNull)
+  assignment         Assignment?         @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  mileageRecord      MileageRecord?      @relation(fields: [mileageRecordId], references: [id], onDelete: SetNull)
+  reimbursementBatch ReimbursementBatch? @relation(fields: [reimbursementBatchId], references: [id], onDelete: SetNull)
+  incident           Incident?           @relation(fields: [incidentId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([actorUserId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@index([riderId])
+  @@index([driverId])
+  @@index([rideRequestId])
+  @@index([tripLegId])
+}
+
+model StatusHistory {
+  id                   String   @id @default(cuid())
+  organizationId       String
+  entityType           String
+  entityId             String
+  oldStatus            String?
+  newStatus            String
+  changedById          String?
+  changedAt            DateTime @default(now())
+  note                 String?
+  riderId              String?
+  driverId             String?
+  rideRequestId        String?
+  tripLegId            String?
+  assignmentId         String?
+  mileageRecordId      String?
+  reimbursementBatchId String?
+  incidentId           String?
+
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  rider              Rider?              @relation(fields: [riderId], references: [id], onDelete: SetNull)
+  driver             Driver?             @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  rideRequest        RideRequest?        @relation(fields: [rideRequestId], references: [id], onDelete: SetNull)
+  tripLeg            TripLeg?            @relation(fields: [tripLegId], references: [id], onDelete: SetNull)
+  assignment         Assignment?         @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  mileageRecord      MileageRecord?      @relation(fields: [mileageRecordId], references: [id], onDelete: SetNull)
+  reimbursementBatch ReimbursementBatch? @relation(fields: [reimbursementBatchId], references: [id], onDelete: SetNull)
+  incident           Incident?           @relation(fields: [incidentId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([entityType, entityId])
+  @@index([changedAt])
+  @@index([riderId])
+  @@index([driverId])
+  @@index([rideRequestId])
+  @@index([tripLegId])
+  @@index([assignmentId])
+}
