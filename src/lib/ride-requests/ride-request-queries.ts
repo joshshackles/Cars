@@ -13,6 +13,17 @@ export async function getRideRequests(organizationId: string) {
   });
 }
 
+export async function getRideRequestForEdit(organizationId: string, rideRequestId: string) {
+  return db.rideRequest.findFirst({
+    where: { id: rideRequestId, organizationId, deletedAt: null },
+    include: {
+      rider: true,
+      fundingSource: true,
+      tripLegs: { orderBy: { sequence: "asc" } },
+    },
+  });
+}
+
 export async function getRideRequestIntakeOptions(organizationId: string) {
   const [riders, fundingSources] = await Promise.all([
     db.rider.findMany({
