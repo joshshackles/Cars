@@ -79,3 +79,46 @@ body {
     box-shadow: 0 12px 32px rgb(0 47 104 / 0.08);
   }
 }
+
+@media (min-width: 1024px) {
+  .dashboard-sidebar {
+    width: 20rem;
+    height: 100dvh;
+    overflow: hidden;
+    transition:
+      width 180ms ease,
+      box-shadow 180ms ease;
+  }
+
+  .dashboard-content {
+    padding-left: 20rem;
+    transition: padding-left 180ms ease;
+  }
+
+  #sidebar-cabinet-toggle:checked ~ .dashboard-sidebar {
+    width: 6rem;
+  }
+
+  #sidebar-cabinet-toggle:checked ~ .dashboard-content {
+    padding-left: 6rem;
+  }
+
+  #sidebar-cabinet-toggle:checked ~ .dashboard-sidebar .cars-logo-text,
+  #sidebar-cabinet-toggle:checked ~ .dashboard-sidebar .sidebar-expanded-only,
+  #sidebar-cabinet-toggle:checked ~ .dashboard-sidebar .sidebar-nav-label {
+    display: none;
+  }
+
+  #sidebar-cabinet-toggle:checked ~ .dashboard-sidebar .sidebar-logo,
+  #sidebar-cabinet-toggle:checked ~ .dashboard-sidebar .sidebar-org-card {
+    justify-content: center;
+  }
+
+  #sidebar-cabinet-toggle:checked ~ .dashboard-sidebar .sidebar-collapse-icon {
+    display: none;
+  }
+
+  #sidebar-cabinet-toggle:checked ~ .dashboard-sidebar .sidebar-expand-icon {
+    display: block;
+  }
+}

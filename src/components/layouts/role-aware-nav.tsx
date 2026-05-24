@@ -28,12 +28,12 @@ export function RoleAwareNav({
             key={item.href}
             href={item.href}
             className={cn(
-              "flex min-h-12 items-center gap-4 rounded-lg px-4 py-3 text-base font-semibold text-white/90 transition-colors hover:bg-white/10 hover:text-white [&_svg]:size-6 [&_svg]:shrink-0",
+              "flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold text-white/90 transition-colors hover:bg-white/10 hover:text-white [&_svg]:size-5 [&_svg]:shrink-0",
               isActive && "bg-cars-red text-white shadow-[0_10px_24px_rgba(227,6,19,0.28)]"
             )}
           >
             <item.icon aria-hidden="true" />
-            <span>{item.label}</span>
+            <span className="sidebar-nav-label truncate">{item.label}</span>
           </Link>
         );
       })}

@@ -17,8 +17,14 @@ export async function DashboardShell({
 
   return (
     <div className="min-h-screen bg-[#f7fbff]">
+      <input
+        id="sidebar-cabinet-toggle"
+        type="checkbox"
+        className="sr-only"
+        aria-label="Collapse dashboard navigation"
+      />
       <Sidebar user={user} />
-      <div className="lg:pl-80">
+      <div className="dashboard-content">
         <TopBar user={user} notificationSummary={notificationSummary} />
         <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
           {children}

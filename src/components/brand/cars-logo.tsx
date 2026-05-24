@@ -19,7 +19,7 @@ export function CarsLogo({
         className="size-16 shrink-0 object-contain drop-shadow-md"
       />
       {!compact ? (
-        <div className="flex min-w-0 flex-col">
+        <div className="cars-logo-text flex min-w-0 flex-col">
           <div className="flex items-baseline gap-1.5 leading-none">
             <span className="text-2xl font-black tracking-tight text-cars-red">CARS</span>
             <span className="text-2xl font-black tracking-tight text-white">DISPATCH</span>
