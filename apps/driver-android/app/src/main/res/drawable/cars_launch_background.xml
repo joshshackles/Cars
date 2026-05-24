@@ -7,6 +7,6 @@
     <item
         android:width="144dp"
         android:height="144dp"
-        android:drawable="@drawable/cars_logo"
+        android:drawable="@drawable/cars_logo_splash"
         android:gravity="center" />
 </layer-list>
