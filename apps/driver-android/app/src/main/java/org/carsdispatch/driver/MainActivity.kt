@@ -13,8 +13,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -61,6 +64,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Job
@@ -251,20 +255,31 @@ fun LoginScreen(busy: Boolean, error: String?, onLogin: (String, String) -> Unit
             .fillMaxSize()
             .background(CarsColors.Navy)
             .safeDrawingPadding()
+            .imePadding()
+            .verticalScroll(rememberScrollState())
             .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Image(
             painter = painterResource(R.drawable.cars_logo),
             contentDescription = "CARS Driver",
-            modifier = Modifier.size(96.dp)
+            modifier = Modifier.size(128.dp)
         )
-        Spacer(Modifier.height(16.dp))
-        Text("CARS Driver", color = Color.White, fontSize = 38.sp, fontWeight = FontWeight.Black)
-        Text("Volunteer Operations", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-        Text("Routes, trip status, and GPS mileage for CARS drivers.", color = CarsColors.PaleBlue)
+        Spacer(Modifier.height(14.dp))
+        Text("CARS Driver", color = Color.White, fontSize = 36.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center)
+        Text("Volunteer Operations", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+        Text(
+            "Routes, trip status, and GPS mileage for active CARS drivers.",
+            color = CarsColors.PaleBlue,
+            textAlign = TextAlign.Center
+        )
         Spacer(Modifier.height(22.dp))
-        Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
+        ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(email, { email = it }, label = { Text("Email") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
@@ -276,6 +291,12 @@ fun LoginScreen(busy: Boolean, error: String?, onLogin: (String, String) -> Unit
                 )
                 PrimaryButton("Sign in", busy) { onLogin(email, accessCode) }
                 if (error != null) ErrorText(error)
+                Text(
+                    "Driver mobile access only. Staff and admin accounts should use the CARS Dispatch web workspace.",
+                    color = CarsColors.Muted,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp
+                )
             }
         }
     }

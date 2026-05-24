@@ -116,7 +116,20 @@ class CarsApi(private val tokenProvider: () -> String?) {
             client.newCall(request).execute().use { response ->
                 val responseBody = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
-                    throw IllegalStateException("CARS Dispatch returned ${response.code}.")
+                    val serverMessage = runCatching {
+                        json.parseToJsonElement(responseBody).jsonObject["error"]?.jsonPrimitive?.contentOrNull
+                    }.getOrNull()
+                    val friendlyMessage = when {
+                        path == "/api/mobile/auth/login" && response.code == 401 ->
+                            "Use your CARS driver email and mobile access code."
+                        response.code == 401 ->
+                            "Your mobile session expired. Please sign in again."
+                        !serverMessage.isNullOrBlank() ->
+                            serverMessage
+                        else ->
+                            "CARS Dispatch could not complete that request. Try again."
+                    }
+                    throw IllegalStateException(friendlyMessage)
                 }
                 json.parseToJsonElement(responseBody).jsonObject
             }
