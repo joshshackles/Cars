@@ -1,13 +1,16 @@
 package org.carsdispatch.driver
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -84,7 +87,6 @@ fun CarsDriverApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val sessionStore = remember { SessionStore(context) }
-    val locationClient = remember { DriverLocationClient(context) }
     var session by remember { mutableStateOf<MobileSession?>(null) }
     var manifest by remember { mutableStateOf<ManifestResponse?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -92,6 +94,10 @@ fun CarsDriverApp() {
     var activeTracking by remember { mutableStateOf<TrackingState?>(null) }
     var trackingJob by remember { mutableStateOf<Job?>(null) }
     val api = remember(session?.token) { CarsApi { session?.token } }
+
+    fun locationClient(): DriverLocationClient {
+        return DriverLocationClient(context.applicationContext)
+    }
 
     fun isInvalidSession(error: Throwable): Boolean {
         return error.message?.contains("401") == true || error.message?.contains("expired", ignoreCase = true) == true
@@ -160,7 +166,6 @@ fun CarsDriverApp() {
                     busy = busy,
                     error = error,
                     activeTracking = activeTracking,
-                    locationClient = locationClient,
                     onRefresh = ::refreshManifest,
                     onLogout = {
                         scope.launch {
@@ -188,12 +193,12 @@ fun CarsDriverApp() {
                             busy = true
                             error = null
                             runCatching {
-                                val first = locationClient.currentLocation()
+                                val first = locationClient().currentLocation()
                                 api.startAssignment(assignment.id, first, assignment.routeUrl())
                                 trackingJob?.cancel()
                                 activeTracking = TrackingState(assignment.id, 1)
                                 trackingJob = launch {
-                                    locationClient.tripLocationFlow().collect { point ->
+                                    locationClient().tripLocationFlow().collect { point ->
                                         val current = activeTracking
                                         activeTracking = current?.copy(points = current.points + 1)
                                         runCatching { api.sendLocation(assignment.id, point) }
@@ -210,7 +215,7 @@ fun CarsDriverApp() {
                             busy = true
                             error = null
                             runCatching {
-                                val last = locationClient.currentLocation()
+                                val last = locationClient().currentLocation()
                                 api.completeAssignment(assignment.id, last, assignment.routeUrl())
                                 trackingJob?.cancel()
                                 trackingJob = null
@@ -228,6 +233,11 @@ fun CarsDriverApp() {
 }
 
 data class TrackingState(val assignmentId: String, val points: Int)
+
+fun hasLocationPermission(context: Context): Boolean {
+    return ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+}
 
 @Composable
 fun LoginScreen(busy: Boolean, error: String?, onLogin: (String, String) -> Unit) {
@@ -272,7 +282,6 @@ fun DriverDashboard(
     busy: Boolean,
     error: String?,
     activeTracking: TrackingState?,
-    locationClient: DriverLocationClient,
     onRefresh: () -> Unit,
     onLogout: () -> Unit,
     onAction: (String, suspend (CarsApi) -> Unit) -> Unit,
@@ -285,7 +294,7 @@ fun DriverDashboard(
     ) {}
 
     LaunchedEffect(Unit) {
-        if (!locationClient.hasLocationPermission()) {
+        if (!hasLocationPermission(context)) {
             permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
         }
     }
@@ -339,7 +348,7 @@ fun DriverDashboard(
                         onStart = { onStartTracking(assignment) },
                         onArrived = {
                             onAction("arrived") {
-                                it.arrived(assignment.id, locationClient.currentLocation())
+                                it.arrived(assignment.id, DriverLocationClient(context.applicationContext).currentLocation())
                             }
                         },
                         onComplete = { onCompleteTracking(assignment) },
