@@ -4,6 +4,10 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "CARS Dispatch",
   description: "Volunteer transportation operations platform.",
+  icons: {
+    icon: "/brand/cars-logo.png",
+    apple: "/brand/cars-logo.png",
+  },
 };
 
 export default function RootLayout({

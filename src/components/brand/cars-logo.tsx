@@ -1,4 +1,4 @@
-import { CarFront } from "lucide-react";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 export function CarsLogo({
@@ -10,12 +10,14 @@ export function CarsLogo({
 }>) {
   return (
     <div className={cn("flex items-center gap-3", className)}>
-      <div className="flex size-16 shrink-0 items-center justify-center rounded-full border-4 border-white bg-white shadow-md ring-2 ring-cars-red">
-        <div className="flex size-12 flex-col items-center justify-center rounded-full border border-cars-navy bg-cars-navy text-white">
-          <CarFront className="size-6" aria-hidden="true" />
-          <span className="mt-0.5 text-[10px] font-black leading-none tracking-widest text-cars-red">CARS</span>
-        </div>
-      </div>
+      <Image
+        src="/brand/cars-logo.png"
+        alt="CARS Community Action Ride System"
+        width={80}
+        height={80}
+        priority
+        className="size-16 shrink-0 object-contain drop-shadow-md"
+      />
       {!compact ? (
         <div className="flex min-w-0 flex-col">
           <div className="flex items-baseline gap-1.5 leading-none">

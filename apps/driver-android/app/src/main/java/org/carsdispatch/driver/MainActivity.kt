@@ -255,7 +255,7 @@ fun LoginScreen(busy: Boolean, error: String?, onLogin: (String, String) -> Unit
         verticalArrangement = Arrangement.Center
     ) {
         Image(
-            painter = painterResource(R.drawable.cars_mark),
+            painter = painterResource(R.drawable.cars_logo),
             contentDescription = "CARS Driver",
             modifier = Modifier.size(96.dp)
         )
@@ -315,7 +315,7 @@ fun DriverDashboard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Image(
-                painter = painterResource(R.drawable.cars_mark),
+                painter = painterResource(R.drawable.cars_logo),
                 contentDescription = "CARS Driver",
                 modifier = Modifier.size(52.dp)
             )
