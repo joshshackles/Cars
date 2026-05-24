@@ -11,8 +11,9 @@ export type MobileUserContext = Awaited<ReturnType<typeof requireMobileUser>>;
 export async function createMobileSession(email: string, deviceName?: string, accessCode?: string) {
   const normalizedEmail = email.trim().toLowerCase();
   const requiredAccessCode = process.env.MOBILE_LOGIN_CODE;
+  const enforceAccessCode = process.env.MOBILE_LOGIN_CODE_REQUIRED === "true";
 
-  if (requiredAccessCode && accessCode !== requiredAccessCode) {
+  if (enforceAccessCode && requiredAccessCode && accessCode !== requiredAccessCode) {
     throw new Error("Invalid mobile login.");
   }
 

@@ -361,7 +361,7 @@ fun LoginScreen(busy: Boolean, error: String?, onLogin: (String, String) -> Unit
                 OutlinedTextField(
                     accessCode,
                     { accessCode = it },
-                    label = { Text("Access code") },
+                    label = { Text("Access code (optional)") },
                     visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth()
                 )
