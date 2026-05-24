@@ -121,7 +121,7 @@ class CarsApi(private val tokenProvider: () -> String?) {
                     }.getOrNull()
                     val friendlyMessage = when {
                         path == "/api/mobile/auth/login" && response.code == 401 ->
-                            "Use your CARS driver email and mobile access code."
+                            "Use a valid CARS email and mobile access code."
                         response.code == 401 ->
                             "Your mobile session expired. Please sign in again."
                         !serverMessage.isNullOrBlank() ->

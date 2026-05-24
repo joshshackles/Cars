@@ -8,7 +8,9 @@ data class MobileSession(
     val expiresAt: String,
     val user: UserSummary,
     val organization: OrganizationSummary,
-    val driver: DriverSummary
+    val role: String? = null,
+    val permissions: List<String> = emptyList(),
+    val driver: DriverSummary? = null
 )
 
 @Serializable

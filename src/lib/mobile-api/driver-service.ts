@@ -15,6 +15,8 @@ type LocationInput = {
   capturedAt?: Date;
 };
 
+type DriverMobileUserContext = MobileUserContext & { driver: NonNullable<MobileUserContext["driver"]> };
+
 type MileageRateSetting = {
   rateCents?: number;
 };
@@ -36,18 +38,30 @@ export async function getMobileProfile(context: MobileUserContext) {
       name: context.membership.organizationName,
       slug: context.membership.organizationSlug,
     },
-    driver: {
-      id: context.driver.id,
-      name: context.driver.displayName,
-      status: context.driver.status,
-      phone: context.driver.phone,
-      email: context.driver.email,
-    },
+    role: context.membership.role,
+    permissions: context.membership.permissions,
+    driver: context.driver
+      ? {
+          id: context.driver.id,
+          name: context.driver.displayName,
+          status: context.driver.status,
+          phone: context.driver.phone,
+          email: context.driver.email,
+        }
+      : null,
   };
 }
 
 export async function getMobileManifest(context: MobileUserContext, date?: Date) {
   const range = getDayRange(date);
+
+  if (!context.driver) {
+    return {
+      date: range.start.toISOString(),
+      assignments: [],
+    };
+  }
+
   const assignments = await db.assignment.findMany({
     where: {
       organizationId: context.membership.organizationId,
@@ -137,7 +151,7 @@ export async function getMobileManifest(context: MobileUserContext, date?: Date)
 }
 
 export async function acceptMobileAssignment(context: MobileUserContext, assignmentId: string) {
-  assertCanUpdateDriverPortal(context);
+  assertDriverPortalContext(context);
   const assignment = await getMobileAssignment(context, assignmentId);
   assertAssignmentOpen(assignment);
 
@@ -155,7 +169,7 @@ export async function acceptMobileAssignment(context: MobileUserContext, assignm
 }
 
 export async function declineMobileAssignment(context: MobileUserContext, assignmentId: string, reason: string) {
-  assertCanUpdateDriverPortal(context);
+  assertDriverPortalContext(context);
 
   if (!reason) {
     throw new Error("A decline reason is required.");
@@ -184,7 +198,7 @@ export async function startMobileAssignment(
   location: LocationInput,
   routeUrl?: string | null
 ) {
-  assertCanUpdateDriverPortal(context);
+  assertDriverPortalContext(context);
   const assignment = await getMobileAssignment(context, assignmentId);
   assertAssignmentAccepted(assignment);
   assertLocation(location);
@@ -202,7 +216,7 @@ export async function recordMobileLocation(
   assignmentId: string,
   location: LocationInput
 ) {
-  assertCanUpdateDriverPortal(context);
+  assertDriverPortalContext(context);
   const assignment = await getMobileAssignment(context, assignmentId);
   assertAssignmentAccepted(assignment);
   assertLocation(location);
@@ -216,7 +230,7 @@ export async function recordMobileLocation(
 }
 
 export async function markMobileArrived(context: MobileUserContext, assignmentId: string, location?: LocationInput) {
-  assertCanUpdateDriverPortal(context);
+  assertDriverPortalContext(context);
   const assignment = await getMobileAssignment(context, assignmentId);
   assertAssignmentAccepted(assignment);
 
@@ -234,7 +248,7 @@ export async function completeMobileAssignment(
   location: LocationInput,
   routeUrl?: string | null
 ) {
-  assertCanUpdateDriverPortal(context);
+  assertDriverPortalContext(context);
   const assignment = await getMobileAssignment(context, assignmentId);
   assertAssignmentAccepted(assignment);
   assertLocation(location);
@@ -260,7 +274,7 @@ export async function reportMobileIssue(
   summary: string,
   details?: string
 ) {
-  assertCanUpdateDriverPortal(context);
+  assertDriverPortalContext(context);
 
   if (!summary) {
     throw new Error("Issue summary is required.");
@@ -288,7 +302,11 @@ export async function reportMobileIssue(
   await changeTripStatus(context, assignment, "NEEDS_ATTENTION", "mobile.issue_reported", summary, true);
 }
 
-function assertCanUpdateDriverPortal(context: MobileUserContext) {
+function assertDriverPortalContext(context: MobileUserContext): asserts context is DriverMobileUserContext {
+  if (!context.driver) {
+    throw new Error("This account does not have a linked driver profile.");
+  }
+
   if (!context.membership.permissions.includes("driver_portal:update")) {
     throw new Error("This account cannot update driver trips.");
   }
@@ -312,7 +330,7 @@ export function parseLocationInput(value: unknown): LocationInput {
   };
 }
 
-async function getMobileAssignment(context: MobileUserContext, assignmentId: string) {
+async function getMobileAssignment(context: DriverMobileUserContext, assignmentId: string) {
   return db.assignment.findFirstOrThrow({
     where: {
       id: assignmentId,
@@ -345,7 +363,7 @@ async function getMobileAssignment(context: MobileUserContext, assignmentId: str
 
 type MobileAssignment = Awaited<ReturnType<typeof getMobileAssignment>>;
 
-async function createLocationPing(context: MobileUserContext, assignment: MobileAssignment, location: LocationInput) {
+async function createLocationPing(context: DriverMobileUserContext, assignment: MobileAssignment, location: LocationInput) {
   return db.driverLocationPing.create({
     data: {
       organizationId: context.membership.organizationId,
@@ -363,7 +381,7 @@ async function createLocationPing(context: MobileUserContext, assignment: Mobile
   });
 }
 
-async function ensureMileageRecord(context: MobileUserContext, assignment: MobileAssignment, routeUrl: string | null) {
+async function ensureMileageRecord(context: DriverMobileUserContext, assignment: MobileAssignment, routeUrl: string | null) {
   const pings = await db.driverLocationPing.findMany({
     where: {
       organizationId: context.membership.organizationId,
@@ -456,7 +474,7 @@ async function ensureMileageRecord(context: MobileUserContext, assignment: Mobil
 }
 
 async function changeTripStatus(
-  context: MobileUserContext,
+  context: DriverMobileUserContext,
   assignment: MobileAssignment,
   status: PortalTripStatus,
   action: string,
@@ -503,7 +521,7 @@ async function changeTripStatus(
 }
 
 async function recordAssignmentStatus(
-  context: MobileUserContext,
+  context: DriverMobileUserContext,
   assignment: MobileAssignment,
   newStatus: "ACCEPTED" | "DECLINED" | "COMPLETED",
   note: string
@@ -524,7 +542,7 @@ async function recordAssignmentStatus(
 }
 
 async function notifyDispatch(
-  context: MobileUserContext,
+  context: DriverMobileUserContext,
   assignment: MobileAssignment,
   subject: string,
   body: string,
@@ -549,7 +567,7 @@ async function notifyDispatch(
 }
 
 async function writeAudit(
-  context: MobileUserContext,
+  context: DriverMobileUserContext,
   assignment: MobileAssignment,
   action: string,
   metadata?: Prisma.InputJsonValue

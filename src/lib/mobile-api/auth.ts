@@ -39,12 +39,10 @@ export async function createMobileSession(email: string, deviceName?: string, ac
     throw new Error("Invalid mobile login.");
   }
 
-  const membership = user.memberships.find((item) =>
-    item.role.rolePermissions.some((rolePermission) => rolePermission.permission.key === "driver_portal:view")
-  );
+  const membership = user.memberships[0];
 
   if (!membership) {
-    throw new Error("This account is not enabled for the driver mobile app.");
+    throw new Error("No active organization membership was found.");
   }
 
   const driver = await db.driver.findFirst({
@@ -54,10 +52,6 @@ export async function createMobileSession(email: string, deviceName?: string, ac
       deletedAt: null,
     },
   });
-
-  if (!driver) {
-    throw new Error("No driver profile is linked to this account.");
-  }
 
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date();
@@ -87,11 +81,17 @@ export async function createMobileSession(email: string, deviceName?: string, ac
       name: membership.organization.name,
       slug: membership.organization.slug,
     },
-    driver: {
-      id: driver.id,
-      name: driver.displayName,
-      status: driver.status,
-    },
+    role: isAppRole(membership.role.key) ? membership.role.key : "driver",
+    permissions: membership.role.rolePermissions
+      .map((item) => item.permission.key)
+      .filter((permission): permission is MembershipContext["permissions"][number] => isPermission(permission)),
+    driver: driver
+      ? {
+          id: driver.id,
+          name: driver.displayName,
+          status: driver.status,
+        }
+      : null,
   };
 }
 
@@ -142,10 +142,6 @@ export async function requireMobileUser(request: NextRequest) {
     );
   const role = isAppRole(membership.role.key) ? membership.role.key : "driver";
 
-  if (!permissions.includes("driver_portal:view")) {
-    throw new Error("This account is not enabled for the driver mobile app.");
-  }
-
   const driver = await db.driver.findFirst({
     where: {
       organizationId: membership.organizationId,
@@ -153,10 +149,6 @@ export async function requireMobileUser(request: NextRequest) {
       deletedAt: null,
     },
   });
-
-  if (!driver) {
-    throw new Error("No driver profile is linked to this account.");
-  }
 
   await db.mobileAuthSession.update({
     where: { id: session.id },

@@ -34,7 +34,6 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.ReportProblem
@@ -110,7 +109,7 @@ fun CarsDriverApp() {
     }
 
     fun refreshManifest() {
-        if (session == null) return
+        if (session?.driver == null) return
         scope.launch {
             busy = true
             error = null
@@ -154,7 +153,11 @@ fun CarsDriverApp() {
                             error = null
                             runCatching {
                                 val nextSession = CarsApi { null }.login(email, accessCode, "Android")
-                                val nextManifest = CarsApi { nextSession.token }.manifest(LocalDate.now().toString())
+                                val nextManifest = if (nextSession.driver != null) {
+                                    CarsApi { nextSession.token }.manifest(LocalDate.now().toString())
+                                } else {
+                                    null
+                                }
                                 sessionStore.save(nextSession)
                                 session = nextSession
                                 manifest = nextManifest
@@ -162,6 +165,19 @@ fun CarsDriverApp() {
                                 error = it.message
                             }
                             busy = false
+                        }
+                    }
+                )
+            } else if (session!!.driver == null) {
+                StaffMobileHome(
+                    session = session!!,
+                    onLogout = {
+                        scope.launch {
+                            runCatching { api.logout() }
+                            sessionStore.clear()
+                            session = null
+                            manifest = null
+                            activeTracking = null
                         }
                     }
                 )
@@ -246,6 +262,66 @@ fun hasLocationPermission(context: Context): Boolean {
 }
 
 @Composable
+fun StaffMobileHome(session: MobileSession, onLogout: () -> Unit) {
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(CarsColors.Navy)
+                .safeDrawingPadding()
+                .padding(18.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Image(
+                painter = painterResource(R.drawable.cars_logo),
+                contentDescription = "CARS Driver",
+                modifier = Modifier.size(56.dp)
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("CARS Mobile", color = CarsColors.PaleBlue, fontWeight = FontWeight.Bold)
+                Text(session.user.name, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
+                Text(session.organization.name, color = CarsColors.PaleBlue)
+            }
+            TextButton(onClick = onLogout) {
+                Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, tint = Color.White)
+                Spacer(Modifier.width(6.dp))
+                Text("Sign out", color = Color.White)
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Signed in", color = CarsColors.Navy, fontSize = 24.sp, fontWeight = FontWeight.Black)
+                    Text(
+                        "This mobile app is currently optimized for driver trip manifests, GPS mileage, and ride updates.",
+                        color = CarsColors.Muted,
+                        lineHeight = 21.sp
+                    )
+                    Text("Role: ${session.role.prettyRoleLabel()}", color = CarsColors.Ink, fontWeight = FontWeight.Bold)
+                }
+            }
+            Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Use the web workspace", color = CarsColors.Navy, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                    Text(
+                        "Staff, admin, finance, dispatch, and reporting tools are available in CARS Dispatch on the web.",
+                        color = CarsColors.Muted,
+                        lineHeight = 21.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun LoginScreen(busy: Boolean, error: String?, onLogin: (String, String) -> Unit) {
     var email by remember { mutableStateOf("driver@esc.example") }
     var accessCode by remember { mutableStateOf("") }
@@ -292,7 +368,7 @@ fun LoginScreen(busy: Boolean, error: String?, onLogin: (String, String) -> Unit
                 PrimaryButton("Sign in", busy) { onLogin(email, accessCode) }
                 if (error != null) ErrorText(error)
                 Text(
-                    "Driver mobile access only. Staff and admin accounts should use the CARS Dispatch web workspace.",
+                    "Driver trip tools appear for linked driver profiles. Staff accounts can sign in here and use the web workspace for operations.",
                     color = CarsColors.Muted,
                     fontSize = 12.sp,
                     lineHeight = 17.sp
@@ -343,7 +419,7 @@ fun DriverDashboard(
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text("CARS Driver", color = CarsColors.PaleBlue, fontWeight = FontWeight.Bold)
-                Text(session.driver.name, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Black)
+                Text(session.driver?.name.orEmpty(), color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Black)
                 Text(session.organization.name, color = CarsColors.PaleBlue)
             }
             TextButton(onClick = onLogout) {
@@ -647,6 +723,20 @@ fun String.urlEncode(): String = URLEncoder.encode(this, StandardCharsets.UTF_8.
 
 fun String.prettyLabel(): String = split("_").joinToString(" ") { part ->
     part.lowercase().replaceFirstChar { it.uppercase() }
+}
+
+fun String?.prettyRoleLabel(): String {
+    return when (this) {
+        "system_admin" -> "System Admin"
+        "organization_admin" -> "Organization Admin"
+        "program_manager" -> "Program Manager"
+        "dispatcher" -> "Dispatcher"
+        "finance_user" -> "Finance"
+        "driver" -> "Driver"
+        "reporting_viewer" -> "Reporting"
+        "agency_partner" -> "Agency Partner"
+        else -> "Workspace User"
+    }
 }
 
 fun formatTime(value: String): String {
