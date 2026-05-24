@@ -392,9 +392,11 @@ fun DriverDashboard(
     onCompleteTracking: (ManifestAssignment) -> Unit
 ) {
     val context = LocalContext.current
+    var selectedAssignmentId by remember { mutableStateOf<String?>(null) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) {}
+    val selectedAssignment = manifest?.assignments?.firstOrNull { it.id == selectedAssignmentId }
 
     LaunchedEffect(Unit) {
         if (!hasLocationPermission(context)) {
@@ -429,42 +431,94 @@ fun DriverDashboard(
             }
         }
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 36.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            item {
-                SummaryCard(manifest, activeTracking, busy, error, onRefresh)
-            }
-            if (manifest?.assignments.isNullOrEmpty()) {
-                item { EmptyManifestCard() }
-            } else {
-                items(manifest!!.assignments, key = { it.id }) { assignment ->
+        if (selectedAssignment != null) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 36.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                item {
+                    OutlinedButton(onClick = { selectedAssignmentId = null }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Back to manifest")
+                    }
+                }
+                item {
                     TripCard(
-                        assignment = assignment,
+                        assignment = selectedAssignment,
                         activeTracking = activeTracking,
                         onOpenRoute = {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(assignment.routeUrl())))
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(selectedAssignment.routeUrl())))
                         },
                         onCallRider = {
-                            assignment.tripLeg.rideRequest.rider.phone?.let {
+                            selectedAssignment.tripLeg.rideRequest.rider.phone?.let {
                                 context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$it")))
                             }
                         },
-                        onAccept = { onAction("accept") { it.acceptAssignment(assignment.id) } },
-                        onDecline = { reason -> onAction("decline") { it.declineAssignment(assignment.id, reason) } },
-                        onStart = { onStartTracking(assignment) },
+                        onAccept = { onAction("accept") { it.acceptAssignment(selectedAssignment.id) } },
+                        onDecline = { reason -> onAction("decline") { it.declineAssignment(selectedAssignment.id, reason) } },
+                        onStart = { onStartTracking(selectedAssignment) },
                         onArrived = {
                             onAction("arrived") {
-                                it.arrived(assignment.id, DriverLocationClient(context.applicationContext).currentLocation())
+                                it.arrived(selectedAssignment.id, DriverLocationClient(context.applicationContext).currentLocation())
                             }
                         },
-                        onComplete = { onCompleteTracking(assignment) },
+                        onComplete = { onCompleteTracking(selectedAssignment) },
                         onReportIssue = { summary, details ->
-                            onAction("issue") { it.reportIssue(assignment.id, summary, details) }
+                            onAction("issue") { it.reportIssue(selectedAssignment.id, summary, details) }
                         }
                     )
+                }
+            }
+        } else {
+            ManifestList(
+                manifest = manifest,
+                activeTracking = activeTracking,
+                busy = busy,
+                error = error,
+                onRefresh = onRefresh,
+                onSelectAssignment = { selectedAssignmentId = it.id }
+            )
+        }
+    }
+}
+
+@Composable
+fun ManifestList(
+    manifest: ManifestResponse?,
+    activeTracking: TrackingState?,
+    busy: Boolean,
+    error: String?,
+    onRefresh: () -> Unit,
+    onSelectAssignment: (ManifestAssignment) -> Unit
+) {
+    val assignments = manifest?.assignments.orEmpty()
+    val activeAssignments = assignments.filterNot { it.isFinalized() }
+    val completedAssignments = assignments.filter { it.isFinalized() }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 36.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item { SummaryCard(manifest, activeTracking, busy, error, onRefresh) }
+        if (assignments.isEmpty()) {
+            item { EmptyManifestCard() }
+        } else {
+            item { SectionHeader("Active trips", activeAssignments.size) }
+            if (activeAssignments.isEmpty()) {
+                item { SectionEmpty("No active trips left on today's manifest.") }
+            } else {
+                items(activeAssignments, key = { it.id }) { assignment ->
+                    TripListItem(assignment = assignment, onOpen = { onSelectAssignment(assignment) })
+                }
+            }
+
+            item { SectionHeader("Completed trips", completedAssignments.size) }
+            if (completedAssignments.isEmpty()) {
+                item { SectionEmpty("Completed rides will appear here as the day moves along.") }
+            } else {
+                items(completedAssignments, key = { it.id }) { assignment ->
+                    TripListItem(assignment = assignment, onOpen = { onSelectAssignment(assignment) })
                 }
             }
         }
@@ -491,7 +545,11 @@ fun SummaryCard(
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Metric("Assigned", (manifest?.assignments?.size ?: 0).toString(), Modifier.weight(1f))
+                Metric("Active", (manifest?.assignments.orEmpty().count { !it.isFinalized() }).toString(), Modifier.weight(1f))
+                Metric("Done", (manifest?.assignments.orEmpty().count { it.isFinalized() }).toString(), Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Metric("Total", (manifest?.assignments?.size ?: 0).toString(), Modifier.weight(1f))
                 Metric("GPS points", (activeTracking?.points ?: 0).toString(), Modifier.weight(1f))
             }
             if (error != null) ErrorText(error)
@@ -508,6 +566,36 @@ fun Metric(label: String, value: String, modifier: Modifier = Modifier) {
     ) {
         Text(value, color = CarsColors.Navy, fontSize = 28.sp, fontWeight = FontWeight.Black)
         Text(label, color = CarsColors.Muted, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+fun TripListItem(assignment: ManifestAssignment, onOpen: () -> Unit) {
+    val trip = assignment.tripLeg
+    val rider = trip.rideRequest.rider
+
+    Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("${rider.firstName} ${rider.lastName}", fontSize = 22.sp, fontWeight = FontWeight.Black, color = CarsColors.Ink)
+                    Text("${formatTime(trip.scheduledPickupAt)} • ${trip.rideRequest.purpose.prettyLabel()}", color = CarsColors.Muted)
+                }
+                StatusPill(trip.status)
+            }
+            Text(
+                trip.pickupAddress.fullAddress(trip.pickupCity, trip.pickupState, trip.pickupPostalCode),
+                color = CarsColors.Ink,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                trip.dropoffAddress.fullAddress(trip.dropoffCity, trip.dropoffState, trip.dropoffPostalCode),
+                color = CarsColors.Muted
+            )
+            Button(onClick = onOpen, colors = ButtonDefaults.buttonColors(containerColor = CarsColors.Navy), modifier = Modifier.fillMaxWidth()) {
+                Text("Open trip tools", fontWeight = FontWeight.Black)
+            }
+        }
     }
 }
 
@@ -584,6 +672,8 @@ fun TripCard(
 
             TripActions(assignment, onAccept, onStart, onArrived, onComplete)
 
+            QuickIssueButtons(onReportIssue)
+
             if (!isFinalized) {
                 OutlinedTextField(declineReason, { declineReason = it }, label = { Text("Decline reason") }, modifier = Modifier.fillMaxWidth())
                 OutlinedButton(
@@ -620,6 +710,41 @@ fun TripCard(
 }
 
 @Composable
+fun QuickIssueButtons(onReportIssue: (String, String) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Quick alerts", color = CarsColors.Ink, fontWeight = FontWeight.Black)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = { onReportIssue("Running late", "Driver reported they are running late from the mobile app.") },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Late")
+            }
+            OutlinedButton(
+                onClick = { onReportIssue("Rider no-show", "Driver reported the rider was not present.") },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("No-show")
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = { onReportIssue("Rider canceled at pickup", "Driver reported rider canceled at pickup.") },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Canceled")
+            }
+            OutlinedButton(
+                onClick = { onReportIssue("Safety concern", "Driver reported a safety concern.") },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Safety")
+            }
+        }
+    }
+}
+
+@Composable
 fun TripActions(
     assignment: ManifestAssignment,
     onAccept: () -> Unit,
@@ -633,6 +758,21 @@ fun TripActions(
         assignment.status == "ACCEPTED" && tripStatus in listOf("DRIVER_CONFIRMED", "ASSIGNED") -> PrimaryButton("Start GPS mileage", false, onStart)
         assignment.status == "ACCEPTED" && tripStatus in listOf("EN_ROUTE", "IN_PROGRESS") -> PrimaryButton("Mark arrived", false, onArrived)
         assignment.status == "ACCEPTED" && tripStatus == "ARRIVED" -> PrimaryButton("Complete trip", false, onComplete)
+    }
+}
+
+@Composable
+fun SectionHeader(title: String, count: Int) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(title, color = CarsColors.Navy, fontSize = 20.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+        Text(count.toString(), color = CarsColors.Muted, fontWeight = FontWeight.Black)
+    }
+}
+
+@Composable
+fun SectionEmpty(message: String) {
+    Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Text(message, color = CarsColors.Muted, modifier = Modifier.fillMaxWidth().padding(16.dp))
     }
 }
 
@@ -713,6 +853,12 @@ fun ManifestAssignment.routeUrl(): String {
     val origin = trip.pickupAddress.fullAddress(trip.pickupCity, trip.pickupState, trip.pickupPostalCode).urlEncode()
     val destination = trip.dropoffAddress.fullAddress(trip.dropoffCity, trip.dropoffState, trip.dropoffPostalCode).urlEncode()
     return "https://www.google.com/maps/dir/?api=1&origin=$origin&destination=$destination&travelmode=driving"
+}
+
+fun ManifestAssignment.isFinalized(): Boolean {
+    return mileageRecord != null ||
+        status in listOf("COMPLETED", "DECLINED", "CANCELED") ||
+        tripLeg.status in listOf("COMPLETED", "CANCELED", "NO_SHOW")
 }
 
 fun String?.fullAddress(city: String?, state: String?, postalCode: String?): String {
