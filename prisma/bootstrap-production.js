@@ -243,8 +243,7 @@ async function main() {
 }
 
 async function seedOperationalDemoData(organizationId, userId, fundingSourceId) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = getCentralStartOfToday();
   const tomorrow = new Date(today);
   tomorrow.setDate(today.getDate() + 1);
   const yesterday = new Date(today);
@@ -570,6 +569,50 @@ async function seedOperationalDemoData(organizationId, userId, fundingSourceId) 
 async function upsertFirst(findExisting, write) {
   const existing = await findExisting();
   return write(existing);
+}
+
+function getCentralStartOfToday() {
+  const timeZone = "America/Chicago";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+
+  return zonedDateTimeToUtc(Number(values.year), Number(values.month), Number(values.day), 0, 0, timeZone);
+}
+
+function zonedDateTimeToUtc(year, month, day, hour, minute, timeZone) {
+  const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0, 0));
+  const offset = getTimeZoneOffsetMs(utcGuess, timeZone);
+
+  return new Date(utcGuess.getTime() - offset);
+}
+
+function getTimeZoneOffsetMs(date, timeZone) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const zonedAsUtc = Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day),
+    Number(values.hour),
+    Number(values.minute),
+    Number(values.second)
+  );
+
+  return zonedAsUtc - date.getTime();
 }
 
 function buildProgramSettings(organizationId, userId) {

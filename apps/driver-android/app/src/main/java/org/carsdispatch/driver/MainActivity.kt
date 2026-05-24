@@ -93,6 +93,10 @@ fun CarsDriverApp() {
     var trackingJob by remember { mutableStateOf<Job?>(null) }
     val api = remember(session?.token) { CarsApi { session?.token } }
 
+    fun isInvalidSession(error: Throwable): Boolean {
+        return error.message?.contains("401") == true || error.message?.contains("expired", ignoreCase = true) == true
+    }
+
     fun refreshManifest() {
         if (session == null) return
         scope.launch {
@@ -112,7 +116,16 @@ fun CarsDriverApp() {
             busy = true
             runCatching { CarsApi { stored.token }.manifest(LocalDate.now().toString()) }
                 .onSuccess { manifest = it }
-                .onFailure { error = it.message }
+                .onFailure {
+                    if (isInvalidSession(it)) {
+                        sessionStore.clear()
+                        session = null
+                        manifest = null
+                        error = "Please sign in again for this CARS Dispatch deployment."
+                    } else {
+                        error = it.message
+                    }
+                }
             busy = false
         }
     }
