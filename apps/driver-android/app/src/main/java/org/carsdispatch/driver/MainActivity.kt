@@ -276,7 +276,6 @@ fun LoginScreen(busy: Boolean, error: String?, onLogin: (String, String) -> Unit
                 )
                 PrimaryButton("Sign in", busy) { onLogin(email, accessCode) }
                 if (error != null) ErrorText(error)
-                Text("Connected to ${BuildConfig.CARS_API_BASE_URL}", color = CarsColors.Muted, fontSize = 12.sp)
             }
         }
     }
