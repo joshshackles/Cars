@@ -11,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -57,6 +58,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -252,10 +254,15 @@ fun LoginScreen(busy: Boolean, error: String?, onLogin: (String, String) -> Unit
             .padding(24.dp),
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(Icons.Default.DirectionsCar, contentDescription = null, tint = Color.White, modifier = Modifier.size(58.dp))
+        Image(
+            painter = painterResource(R.drawable.cars_mark),
+            contentDescription = "CARS Driver",
+            modifier = Modifier.size(96.dp)
+        )
         Spacer(Modifier.height(16.dp))
-        Text("CARS Driver", color = Color.White, fontSize = 36.sp, fontWeight = FontWeight.Black)
-        Text("Native Android trip manifest, route, GPS mileage, and dispatch issue reporting.", color = CarsColors.PaleBlue)
+        Text("CARS Driver", color = Color.White, fontSize = 38.sp, fontWeight = FontWeight.Black)
+        Text("Volunteer Operations", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+        Text("Routes, trip status, and GPS mileage for CARS drivers.", color = CarsColors.PaleBlue)
         Spacer(Modifier.height(22.dp))
         Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -308,6 +315,12 @@ fun DriverDashboard(
                 .padding(18.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Image(
+                painter = painterResource(R.drawable.cars_mark),
+                contentDescription = "CARS Driver",
+                modifier = Modifier.size(52.dp)
+            )
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text("CARS Driver", color = CarsColors.PaleBlue, fontWeight = FontWeight.Bold)
                 Text(session.driver.name, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Black)

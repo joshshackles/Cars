@@ -1,0 +1,12 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="@color/cars_white"
+        android:pathData="M54,16C33,16 16,33 16,54C16,75 33,92 54,92C75,92 92,75 92,54C92,33 75,16 54,16ZM54,25C70,25 83,38 83,54C83,70 70,83 54,83C38,83 25,70 25,54C25,38 38,25 54,25Z" />
+    <path
+        android:fillColor="@color/cars_white"
+        android:pathData="M37,52C37.5,48.1 40.9,45 45,45L63,45C67.1,45 70.5,48.1 71,52L76,58L76,71C76,74.3 73.3,77 70,77L38,77C34.7,77 32,74.3 32,71L32,58L37,52ZM42,51L39,59L69,59L66,51L42,51Z" />
+</vector>

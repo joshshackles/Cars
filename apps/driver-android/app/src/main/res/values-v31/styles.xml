@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.CARSDriver" parent="Theme.CARSDriver.Base">
+        <item name="android:windowSplashScreenBackground">@color/cars_navy</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/cars_splash_icon</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/cars_red</item>
+    </style>
+</resources>

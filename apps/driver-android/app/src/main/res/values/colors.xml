@@ -1,0 +1,7 @@
+<resources>
+    <color name="cars_navy">#003A78</color>
+    <color name="cars_deep_navy">#002E63</color>
+    <color name="cars_red">#E30613</color>
+    <color name="cars_pale_blue">#DCEBFF</color>
+    <color name="cars_white">#FFFFFF</color>
+</resources>
