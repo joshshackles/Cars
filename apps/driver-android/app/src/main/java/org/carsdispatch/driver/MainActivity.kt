@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -64,6 +65,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Job
@@ -280,8 +282,8 @@ fun StaffMobileHome(session: MobileSession, onLogout: () -> Unit) {
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text("CARS Mobile", color = CarsColors.PaleBlue, fontWeight = FontWeight.Bold)
-                Text(session.user.name, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
-                Text(session.organization.name, color = CarsColors.PaleBlue)
+                Text(session.user.name, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(session.organization.name, color = CarsColors.PaleBlue, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             TextButton(onClick = onLogout) {
                 Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, tint = Color.White)
@@ -421,8 +423,8 @@ fun DriverDashboard(
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text("CARS Driver", color = CarsColors.PaleBlue, fontWeight = FontWeight.Bold)
-                Text(session.driver?.name.orEmpty(), color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Black)
-                Text(session.organization.name, color = CarsColors.PaleBlue)
+                Text(session.driver?.name.orEmpty(), color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(session.organization.name, color = CarsColors.PaleBlue, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             TextButton(onClick = onLogout) {
                 Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, tint = Color.White)
@@ -434,7 +436,7 @@ fun DriverDashboard(
         if (selectedAssignment != null) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 36.dp),
+                contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 72.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 item {
@@ -497,7 +499,7 @@ fun ManifestList(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 36.dp),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 72.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item { SummaryCard(manifest, activeTracking, busy, error, onRefresh) }
@@ -780,8 +782,8 @@ fun SectionEmpty(message: String) {
 fun LocationPanel(label: String, address: String, county: String?) {
     Column(Modifier.background(CarsColors.Soft, RoundedCornerShape(8.dp)).padding(12.dp)) {
         Text(label.uppercase(), color = CarsColors.Muted, fontSize = 12.sp, fontWeight = FontWeight.Black)
-        Text(address.ifBlank { "Address pending" }, color = CarsColors.Ink, fontWeight = FontWeight.Bold)
-        if (!county.isNullOrBlank()) Text(county, color = CarsColors.Muted)
+        Text(address.ifBlank { "Address pending" }, color = CarsColors.Ink, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        if (!county.isNullOrBlank()) Text(county, color = CarsColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
