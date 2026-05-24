@@ -1,0 +1,8 @@
+.expo/
+dist/
+build/
+*.apk
+*.aab
+*.jks
+*.keystore
+google-service-account.json

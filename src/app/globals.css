@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 210 33% 98%;
+  --foreground: 215 70% 14%;
+  --card: 0 0% 100%;
+  --card-foreground: 215 70% 14%;
+  --primary: 213 96% 20%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 214 42% 94%;
+  --secondary-foreground: 215 70% 14%;
+  --muted: 214 42% 94%;
+  --muted-foreground: 216 25% 38%;
+  --accent: 358 88% 47%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 358 88% 47%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 214 26% 84%;
+  --input: 214 26% 84%;
+  --ring: 358 88% 47%;
+  --radius: 0.5rem;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  background:
+    radial-gradient(circle at top left, rgb(227 237 249 / 0.75), transparent 34rem),
+    hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-feature-settings: "rlig" 1, "calt" 1;
+}
+
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4 {
+    color: #002f68;
+  }
+}
+
+@layer utilities {
+  .bg-cars-navy {
+    background-color: #002f68;
+  }
+
+  .bg-cars-navy-dark {
+    background-color: #001f45;
+  }
+
+  .bg-cars-red {
+    background-color: #e30613;
+  }
+
+  .text-cars-navy {
+    color: #002f68;
+  }
+
+  .text-cars-red {
+    color: #e30613;
+  }
+
+  .border-cars-red {
+    border-color: #e30613;
+  }
+
+  .ring-cars-red {
+    --tw-ring-color: #e30613;
+  }
+
+  .cars-panel {
+    border: 1px solid rgb(190 203 220 / 0.85);
+    background: rgb(255 255 255 / 0.96);
+    box-shadow: 0 12px 32px rgb(0 47 104 / 0.08);
+  }
+}

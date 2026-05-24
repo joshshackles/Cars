@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "CARS Driver",
+    "slug": "cars-driver",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "carsdriver",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": ["**/*"],
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#00366f"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "org.carsdispatch.driver"
+    },
+    "android": {
+      "package": "org.carsdispatch.driver",
+      "versionCode": 1,
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#00366f"
+      },
+      "playStoreUrl": ""
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "CARS Driver uses your location while an assigned trip is active to record trip progress and calculate mileage."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36,
+            "minSdkVersion": 23
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "apiBaseUrl": "https://carsdispatch.vercel.app"
+    }
+  }
+}

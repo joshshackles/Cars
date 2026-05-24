@@ -1,0 +1,30 @@
+{
+  "name": "cars-driver-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo/AppEntry.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "build:android": "eas build --platform android --profile preview",
+    "submit:android": "eas submit --platform android",
+    "release:check": "node src/api/smoke-test.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@expo/vector-icons": "^15.0.3",
+    "expo": "~54.0.0",
+    "expo-build-properties": "~1.0.9",
+    "expo-constants": "~18.0.10",
+    "expo-linking": "~8.0.8",
+    "expo-location": "~19.0.7",
+    "expo-secure-store": "~15.0.7",
+    "react": "19.1.0",
+    "react-native": "0.81.5"
+  },
+  "devDependencies": {
+    "@types/react": "~19.1.10",
+    "eas-cli": "^19.0.8",
+    "typescript": "~5.9.2"
+  }
+}

@@ -1,0 +1,14 @@
+node_modules
+.next
+.env
+.env*.local
+dist
+coverage
+*.tsbuildinfo
+prisma/dev.db
+apps/driver-android/.gradle
+apps/driver-android/.idea
+apps/driver-android/**/build
+apps/driver-android/local.properties
+apps/driver-android/*.jks
+apps/driver-android/*.keystore
