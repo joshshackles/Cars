@@ -71,6 +71,9 @@ Required production variables:
 - `APP_URL`: canonical deployed app URL.
 - `NEXTAUTH_URL`: auth callback/base URL when NextAuth/Auth.js is enabled.
 - `NEXTAUTH_SECRET`: strong random auth secret.
+- `GOOGLE_CLIENT_ID`: Google OAuth web client ID.
+- `GOOGLE_CLIENT_SECRET`: Google OAuth web client secret.
+- `GOOGLE_REDIRECT_URI`: Google OAuth redirect URI, for example `https://your-app.vercel.app/api/auth/google/callback`.
 - `NEXT_PUBLIC_APP_NAME`: public app name.
 - `HEALTHCHECK_SECRET`: optional secret for `/api/health`.
 - `MOBILE_LOGIN_CODE`: optional shared access code for the Android driver app login while full password/auth-provider login is added.
@@ -118,6 +121,20 @@ The app is structured for multi-tenant authentication through memberships:
 - `Role` groups permissions for an organization.
 - `Permission` stores reusable capability keys.
 - `Invitation` is prepared for future invite flows.
+
+Google authorization is available when `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set. Configure a Google OAuth web application in Google Cloud Console and add this authorized redirect URI:
+
+```text
+https://YOUR_DOMAIN/api/auth/google/callback
+```
+
+For local development, use:
+
+```text
+http://localhost:3000/api/auth/google/callback
+```
+
+Google sign-in validates that Google returned a verified email address. If the email already belongs to a CARS user with an active membership, the user is signed in. If the email matches a pending invitation, the app creates/links the user and activates that membership. If there is no membership or invitation, the account is created for validation and routed to the pending account page.
 
 During local scaffold development, `src/lib/auth/session.ts` returns a demo user in the `Economic Security Corporation` organization. Change `CARS_DEMO_ROLE`, `CARS_DEMO_EMAIL`, and `CARS_DEMO_NAME` in `.env` to preview role-aware navigation and page access. Use `CARS_DEMO_ROLE=driver` and `CARS_DEMO_EMAIL=driver@esc.example` to preview the driver portal.
 

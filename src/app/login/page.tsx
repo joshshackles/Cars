@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { ArrowLeft, LogIn } from "lucide-react";
+import { ArrowLeft, LogIn, ShieldCheck } from "lucide-react";
 import { signInAction } from "@/actions/auth-actions";
 import { CarsLogo } from "@/components/brand/cars-logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { demoLoginUsers } from "@/lib/auth/demo-users";
+import { isGoogleOAuthConfigured } from "@/lib/auth/google-oauth";
 import { roleLabels } from "@/lib/auth/permissions";
 
 type LoginPageProps = {
@@ -14,6 +15,7 @@ type LoginPageProps = {
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const params = (await searchParams) ?? {};
   const error = Array.isArray(params.error) ? params.error[0] : params.error;
+  const googleEnabled = isGoogleOAuthConfigured();
 
   return (
     <main className="min-h-screen bg-[#f7fbff] px-4 py-8 text-foreground sm:px-6 lg:px-8">
@@ -39,12 +41,25 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             <CardContent className="flex flex-col gap-4">
               {error ? (
                 <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                  Select one of the available workspace accounts.
+                  {getLoginErrorMessage(error)}
                 </div>
               ) : null}
+              {googleEnabled ? (
+                <Button asChild variant="secondary" className="w-full">
+                  <Link href="/api/auth/google/start">
+                    <ShieldCheck aria-hidden="true" />
+                    Continue with Google
+                  </Link>
+                </Button>
+              ) : (
+                <div className="rounded-md border bg-secondary/50 p-3 text-sm text-muted-foreground">
+                  Google sign-in is ready to enable. Add Google OAuth credentials to the
+                  environment to show the Google authorization button.
+                </div>
+              )}
               <p className="text-sm leading-6 text-muted-foreground">
-                This is a demo login for the production preview. A real identity provider can replace it
-                without changing the permission model, protected routes, or organization scoping.
+                Google sign-in validates the account email and opens an existing organization
+                membership or a pending invitation. Demo accounts remain available for testing.
               </p>
               <div className="rounded-md border bg-background p-3 text-sm">
                 <p className="font-medium">Default organization</p>
@@ -78,4 +93,20 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       </div>
     </main>
   );
+}
+
+function getLoginErrorMessage(error: string) {
+  if (error === "invalid-account") {
+    return "Select one of the available workspace accounts.";
+  }
+
+  if (error === "email-not-verified") {
+    return "Google did not return a verified email address for that account.";
+  }
+
+  if (error === "google-state") {
+    return "Google sign-in expired. Please try again.";
+  }
+
+  return error;
 }

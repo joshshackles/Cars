@@ -29,7 +29,7 @@ const demoMembership: MembershipContext = {
 export async function getCurrentUser(): Promise<SessionUser | null> {
   const cookieStore = await cookies();
   const selectedEmail = cookieStore.get(sessionCookieName)?.value;
-  const sessionEmail = selectedEmail && isDemoLoginEmail(selectedEmail) ? selectedEmail : null;
+  const sessionEmail = selectedEmail?.trim().toLowerCase() || null;
 
   if (!sessionEmail) {
     return null;
@@ -79,6 +79,10 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
         permissions: permissions.length > 0 ? permissions : rolePermissions[role],
       },
     };
+  }
+
+  if (!isDemoLoginEmail(sessionEmail)) {
+    return null;
   }
 
   return {
