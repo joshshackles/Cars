@@ -115,6 +115,7 @@ fun CarsDriverApp() {
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var screen by remember { mutableStateOf(MobileScreen.PublicHome) }
+    var driverCabinetSection by remember { mutableStateOf<String?>(null) }
     var activeTracking by remember { mutableStateOf<TrackingState?>(null) }
     var trackingJob by remember { mutableStateOf<Job?>(null) }
     val api = remember(session?.token) { CarsApi { session?.token } }
@@ -155,7 +156,7 @@ fun CarsDriverApp() {
         val stored = sessionStore.load()
         session = stored
         if (stored != null) {
-            screen = if (stored.driver != null) MobileScreen.DriverDashboard else MobileScreen.Home
+            screen = MobileScreen.Home
             busy = true
             runCatching { CarsApi { stored.token }.manifest(LocalDate.now().toString()) }
                 .onSuccess { manifest = it }
@@ -199,7 +200,7 @@ fun CarsDriverApp() {
                                 val nextApi = CarsApi { nextSession.token }
                                 sessionStore.save(nextSession)
                                 session = nextSession
-                                screen = if (nextSession.driver != null) MobileScreen.DriverDashboard else MobileScreen.Home
+                                screen = MobileScreen.Home
 
                                 runCatching { nextApi.profile() }
                                     .onSuccess { profile = it }
@@ -299,6 +300,10 @@ fun CarsDriverApp() {
                     busy = busy,
                     error = error,
                     onNavigate = { screen = it },
+                    onOpenDriverCabinet = { section ->
+                        driverCabinetSection = section
+                        screen = MobileScreen.DriverTools
+                    },
                     onLogout = {
                         scope.launch {
                             runCatching { api.logout() }
@@ -333,6 +338,7 @@ fun CarsDriverApp() {
                         }
                     },
                     driverTools = driverTools,
+                    driverCabinetSection = driverCabinetSection,
                     onRefreshDriverTools = ::refreshDriverTools,
                     onSaveDriverInfo = { payload ->
                         scope.launch {
@@ -368,6 +374,13 @@ enum class MobileScreen {
     RideRequest,
     DriverTools,
     DriverDashboard
+}
+
+object DriverCabinetSections {
+    const val DriverInfo = "driver_info"
+    const val Availability = "availability"
+    const val Mileage = "mileage"
+    const val Reimbursements = "reimbursements"
 }
 
 fun hasLocationPermission(context: Context): Boolean {
@@ -430,10 +443,12 @@ fun MobileHomeScaffold(
     busy: Boolean,
     error: String?,
     onNavigate: (MobileScreen) -> Unit,
+    onOpenDriverCabinet: (String) -> Unit,
     onLogout: () -> Unit,
     onSaveProfile: (ProfileUpdatePayload) -> Unit,
     onRequestRide: (RideRequestPayload) -> Unit,
     driverTools: DriverToolsResponse?,
+    driverCabinetSection: String?,
     onRefreshDriverTools: () -> Unit,
     onSaveDriverInfo: (DriverInfoUpdatePayload) -> Unit,
     onAddAvailability: (DriverAvailabilityPayload) -> Unit
@@ -445,6 +460,7 @@ fun MobileHomeScaffold(
             MobileScreen.RideRequest -> RideRequestForm(profile = profile, busy = busy, error = error, onSubmit = onRequestRide, onBack = { onNavigate(MobileScreen.Home) })
             MobileScreen.DriverTools -> DriverToolsScreen(
                 tools = driverTools,
+                initialSection = driverCabinetSection,
                 busy = busy,
                 error = error,
                 onRefresh = onRefreshDriverTools,
@@ -452,7 +468,12 @@ fun MobileHomeScaffold(
                 onAddAvailability = onAddAvailability,
                 onBack = { onNavigate(MobileScreen.Home) }
             )
-            else -> MobileHomeScreen(session = session, profile = profile, onNavigate = onNavigate)
+            else -> MobileHomeScreen(
+                session = session,
+                profile = profile,
+                onNavigate = onNavigate,
+                onOpenDriverCabinet = onOpenDriverCabinet
+            )
         }
     }
 }
@@ -487,7 +508,12 @@ fun MobileHeader(session: MobileSession, profile: MobileProfile?, onLogout: () -
 }
 
 @Composable
-fun MobileHomeScreen(session: MobileSession, profile: MobileProfile?, onNavigate: (MobileScreen) -> Unit) {
+fun MobileHomeScreen(
+    session: MobileSession,
+    profile: MobileProfile?,
+    onNavigate: (MobileScreen) -> Unit,
+    onOpenDriverCabinet: (String) -> Unit
+) {
     val context = LocalContext.current
     val rider = profile?.rider
     val missingProfileItems = listOfNotNull(
@@ -542,29 +568,43 @@ fun MobileHomeScreen(session: MobileSession, profile: MobileProfile?, onNavigate
                 )
             }
             item {
+                DriverHomeFeatureGrid(
+                    onManifest = { onNavigate(MobileScreen.DriverDashboard) },
+                    onAvailability = { onOpenDriverCabinet(DriverCabinetSections.Availability) },
+                    onDriverInfo = { onOpenDriverCabinet(DriverCabinetSections.DriverInfo) },
+                    onMileage = { onOpenDriverCabinet(DriverCabinetSections.Mileage) },
+                    onReimbursements = { onOpenDriverCabinet(DriverCabinetSections.Reimbursements) },
+                    onProfile = { onNavigate(MobileScreen.Profile) },
+                    onRideRequest = { onNavigate(MobileScreen.RideRequest) },
+                    onCallCars = { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:4174382925"))) }
+                )
+            }
+            item {
                 HomeActionCard(
                     icon = Icons.Default.Edit,
                     title = "Driver cabinet",
                     description = "Availability, mileage, reimbursements, and driver info.",
-                    onClick = { onNavigate(MobileScreen.DriverTools) }
+                    onClick = { onOpenDriverCabinet(DriverCabinetSections.DriverInfo) }
                 )
             }
         }
-        item {
-            HomeActionCard(
-                icon = Icons.Default.Event,
-                title = "Request a ride",
-                description = "Send a transportation request to the CARS dispatch team.",
-                onClick = { onNavigate(MobileScreen.RideRequest) }
-            )
-        }
-        item {
-            HomeActionCard(
-                icon = Icons.Default.Person,
-                title = "Update my information",
-                description = profile?.rider?.phone ?: "Add phone, address, pickup notes, and preferences.",
-                onClick = { onNavigate(MobileScreen.Profile) }
-            )
+        if (session.driver == null) {
+            item {
+                HomeActionCard(
+                    icon = Icons.Default.Event,
+                    title = "Request a ride",
+                    description = "Send a transportation request to the CARS dispatch team.",
+                    onClick = { onNavigate(MobileScreen.RideRequest) }
+                )
+            }
+            item {
+                HomeActionCard(
+                    icon = Icons.Default.Person,
+                    title = "Update my information",
+                    description = profile?.rider?.phone ?: "Add phone, address, pickup notes, and preferences.",
+                    onClick = { onNavigate(MobileScreen.Profile) }
+                )
+            }
         }
         item {
             Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
@@ -582,6 +622,69 @@ fun MobileHomeScreen(session: MobileSession, profile: MobileProfile?, onNavigate
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun DriverHomeFeatureGrid(
+    onManifest: () -> Unit,
+    onAvailability: () -> Unit,
+    onDriverInfo: () -> Unit,
+    onMileage: () -> Unit,
+    onReimbursements: () -> Unit,
+    onProfile: () -> Unit,
+    onRideRequest: () -> Unit,
+    onCallCars: () -> Unit
+) {
+    Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Driver menu", color = CarsColors.Navy, fontSize = 22.sp, fontWeight = FontWeight.Black)
+            Text("Everything you need for trips, records, scheduling, and help.", color = CarsColors.Muted, lineHeight = 20.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DriverMenuButton("Manifest", "Trips", Icons.Default.Event, Modifier.weight(1f), onManifest)
+                DriverMenuButton("Availability", "Schedule", Icons.Default.Edit, Modifier.weight(1f), onAvailability)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DriverMenuButton("Vehicle", "Insurance", Icons.Default.DirectionsCar, Modifier.weight(1f), onDriverInfo)
+                DriverMenuButton("Rides", "Upcoming/past", Icons.Default.Navigation, Modifier.weight(1f), onMileage)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DriverMenuButton("Mileage", "History", Icons.Default.LocationOn, Modifier.weight(1f), onMileage)
+                DriverMenuButton("Pay", "Reimbursements", Icons.Default.CheckCircle, Modifier.weight(1f), onReimbursements)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DriverMenuButton("Profile", "Contact info", Icons.Default.Person, Modifier.weight(1f), onProfile)
+                DriverMenuButton("Ride", "Request help", Icons.Default.Call, Modifier.weight(1f), onRideRequest)
+            }
+            OutlinedButton(onClick = onCallCars, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                Icon(Icons.Default.Call, contentDescription = null, tint = CarsColors.Red)
+                Spacer(Modifier.width(8.dp))
+                Text("Call CARS dispatch", color = CarsColors.Red, fontWeight = FontWeight.Black)
+            }
+        }
+    }
+}
+
+@Composable
+fun DriverMenuButton(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier.height(76.dp),
+        shape = RoundedCornerShape(8.dp),
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+    ) {
+        Column(horizontalAlignment = Alignment.Start, modifier = Modifier.fillMaxWidth()) {
+            Icon(icon, contentDescription = null, tint = CarsColors.Navy, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.height(4.dp))
+            Text(title, color = CarsColors.Navy, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(subtitle, color = CarsColors.Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -997,6 +1100,7 @@ fun LoginScreen(busy: Boolean, error: String?, onLogin: (String, String) -> Unit
 @Composable
 fun DriverToolsScreen(
     tools: DriverToolsResponse?,
+    initialSection: String?,
     busy: Boolean,
     error: String?,
     onRefresh: () -> Unit,
@@ -1022,6 +1126,35 @@ fun DriverToolsScreen(
     var availabilityOpen by remember { mutableStateOf(false) }
     var mileageOpen by remember { mutableStateOf(false) }
     var reimbursementsOpen by remember { mutableStateOf(false) }
+
+    LaunchedEffect(initialSection) {
+        when (initialSection) {
+            DriverCabinetSections.DriverInfo -> {
+                driverInfoOpen = true
+                availabilityOpen = false
+                mileageOpen = false
+                reimbursementsOpen = false
+            }
+            DriverCabinetSections.Availability -> {
+                driverInfoOpen = false
+                availabilityOpen = true
+                mileageOpen = false
+                reimbursementsOpen = false
+            }
+            DriverCabinetSections.Mileage -> {
+                driverInfoOpen = false
+                availabilityOpen = false
+                mileageOpen = true
+                reimbursementsOpen = false
+            }
+            DriverCabinetSections.Reimbursements -> {
+                driverInfoOpen = false
+                availabilityOpen = false
+                mileageOpen = false
+                reimbursementsOpen = true
+            }
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
