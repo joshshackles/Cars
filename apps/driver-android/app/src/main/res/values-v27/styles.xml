@@ -1,13 +1,10 @@
 <resources>
     <style name="Theme.CARSDriver.Base" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowLightNavigationBar">false</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:statusBarColor">@color/cars_navy</item>
         <item name="android:navigationBarColor">@color/cars_navy</item>
         <item name="android:fontFamily">sans</item>
         <item name="android:colorAccent">@color/cars_red</item>
-    </style>
-
-    <style name="Theme.CARSDriver" parent="Theme.CARSDriver.Base">
-        <item name="android:windowBackground">@drawable/cars_launch_background</item>
     </style>
 </resources>
