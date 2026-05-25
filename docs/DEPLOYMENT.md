@@ -10,6 +10,7 @@ Set these in Vercel for Production, Preview, and Development as appropriate.
 | --- | --- | --- |
 | `DATABASE_URL` | Yes | Neon pooled connection string for runtime queries. Use the host with `-pooler` and `sslmode=require`. |
 | `DIRECT_URL` | Yes | Neon direct connection string for Prisma migrations. Do not use the pooler host for migrations. |
+| `DATABASE_URL_UNPOOLED` | Optional | Vercel/Neon's direct unpooled URL. Used automatically as `DIRECT_URL` by the build script when `DIRECT_URL` is missing. |
 | `APP_URL` | Yes | Canonical deployed app URL, for example `https://cars-dispatch.example.org`. |
 | `NEXTAUTH_URL` | Yes when using NextAuth/Auth.js | Auth callback/base URL. Match `APP_URL` unless your auth provider needs a different value. |
 | `NEXTAUTH_SECRET` | Yes | Strong random auth/session secret. Generate with `openssl rand -base64 32`. |
@@ -34,7 +35,7 @@ Temporary scaffold auth variables are still supported until production auth is w
    - It should use the pooled host, typically containing `-pooler`.
    - Keep `sslmode=require`.
    - If Neon includes `channel_binding=require`, keep it if your environment supports it.
-4. Copy the direct connection string for `DIRECT_URL`.
+4. Copy the direct connection string for `DIRECT_URL`, or keep Vercel/Neon's generated `DATABASE_URL_UNPOOLED`.
    - It should not use the `-pooler` host.
    - This is the connection Prisma Migrate uses for DDL.
 5. Add both values to Vercel environment variables.
@@ -51,7 +52,7 @@ datasource db {
 }
 ```
 
-Runtime queries use `DATABASE_URL`. Prisma migrations use `DIRECT_URL`.
+Runtime queries use `DATABASE_URL`. Prisma migrations use `DIRECT_URL`; on Vercel, `DATABASE_URL_UNPOOLED` is accepted as a fallback direct URL.
 
 Useful scripts:
 
@@ -108,7 +109,7 @@ Use this only for an intentional demo environment.
 
 1. Create the Neon database.
 2. Add `DATABASE_URL` using the pooled Neon URL.
-3. Add `DIRECT_URL` using the direct Neon URL.
+3. Add `DIRECT_URL` using the direct Neon URL, or verify `DATABASE_URL_UNPOOLED` exists.
 4. Add `APP_URL`, `NEXTAUTH_URL`, `NEXTAUTH_SECRET`, and `NEXT_PUBLIC_APP_NAME`.
 5. Add `HEALTHCHECK_SECRET` if the health route should be protected.
 6. Run `npm run prisma:deploy` from a trusted release environment.

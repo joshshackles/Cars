@@ -12,3 +12,5 @@ apps/driver-android/**/build
 apps/driver-android/local.properties
 apps/driver-android/*.jks
 apps/driver-android/*.keystore
+
+.vercel

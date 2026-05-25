@@ -5,4 +5,9 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const compat = new FlatCompat({ baseDirectory: __dirname });
 
-export default [{ ignores: ["apps/driver-mobile/**"] }, ...compat.extends("next/core-web-vitals")];
+const eslintConfig = [
+  { ignores: [".next/**", "node_modules/**", "apps/driver-mobile/**", "apps/driver-android/**/build/**"] },
+  ...compat.extends("next/core-web-vitals"),
+];
+
+export default eslintConfig;

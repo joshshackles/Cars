@@ -33,10 +33,15 @@ if (!skipDatabaseBootstrap) {
     process.exit(1);
   }
 
+  if (!env.DIRECT_URL && env.DATABASE_URL_UNPOOLED) {
+    env.DIRECT_URL = env.DATABASE_URL_UNPOOLED;
+    console.log("DIRECT_URL is not set. Using DATABASE_URL_UNPOOLED for Prisma schema work.");
+  }
+
   if (!env.DIRECT_URL) {
     env.DIRECT_URL = env.DATABASE_URL;
-    console.warn("DIRECT_URL is not set. Falling back to DATABASE_URL for the Prisma build step.");
-    console.warn("For Neon, set DIRECT_URL to the direct non-pooler connection string in Vercel.");
+    console.warn("DIRECT_URL and DATABASE_URL_UNPOOLED are not set. Falling back to DATABASE_URL for the Prisma build step.");
+    console.warn("For Neon, set DIRECT_URL or DATABASE_URL_UNPOOLED to the direct non-pooler connection string in Vercel.");
   }
 
   run("prisma", ["db", "push", "--skip-generate"]);

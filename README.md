@@ -68,6 +68,7 @@ Required production variables:
 
 - `DATABASE_URL`: Neon pooled URL, usually with `-pooler`, used by Prisma Client at runtime.
 - `DIRECT_URL`: Neon direct URL, used by Prisma Migrate.
+- `DATABASE_URL_UNPOOLED`: Neon/Vercel's direct unpooled URL. The Vercel build script uses this as `DIRECT_URL` when `DIRECT_URL` is not set.
 - `APP_URL`: canonical deployed app URL.
 - `NEXTAUTH_URL`: auth callback/base URL when NextAuth/Auth.js is enabled.
 - `NEXTAUTH_SECRET`: strong random auth secret.
@@ -84,14 +85,14 @@ Deployment flow:
 
 1. Create a Neon project.
 2. Copy the pooled Neon connection string into `DATABASE_URL`.
-3. Copy the direct Neon connection string into `DIRECT_URL`.
+3. Copy the direct Neon connection string into `DIRECT_URL`. If Vercel created `DATABASE_URL_UNPOOLED` for you, that is also accepted by the build script.
 4. Add auth/app variables to Vercel.
 5. Deploy to Vercel. For the MVP bootstrap, the Vercel build runs `scripts/vercel-build.cjs`, which initializes the database with `prisma db push --skip-generate`, runs the production bootstrap, generates Prisma Client, and then runs `next build`.
 6. For mature production releases, replace the bootstrap push with committed Prisma migrations and run `npm run prisma:deploy` from a trusted release environment.
 7. Optionally seed demo data only with `ALLOW_PRODUCTION_SEED=true npm run db:seed`.
 8. Verify production health at `/api/health`.
 
-If a Vercel build fails before `next build`, confirm both Neon URLs are present. `DATABASE_URL` should be the pooled `-pooler` URL for runtime queries, and `DIRECT_URL` should be the direct non-pooler URL for schema work. The build script falls back to `DATABASE_URL` when `DIRECT_URL` is missing so the error is easier to diagnose, but Neon deployments should still set both values.
+If a Vercel build fails before `next build`, confirm the Neon URLs are present. `DATABASE_URL` should be the pooled `-pooler` URL for runtime queries. `DIRECT_URL` or `DATABASE_URL_UNPOOLED` should be the direct non-pooler URL for schema work. The build script only falls back to `DATABASE_URL` when neither direct URL name is available.
 
 See `docs/DEPLOYMENT.md` for the full checklist.
 

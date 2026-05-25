@@ -19,7 +19,7 @@ export async function GET(request: Request) {
 
   const env = {
     databaseUrl: Boolean(process.env.DATABASE_URL),
-    directUrl: Boolean(process.env.DIRECT_URL),
+    directUrl: Boolean(process.env.DIRECT_URL || process.env.DATABASE_URL_UNPOOLED),
     appUrl: Boolean(process.env.APP_URL),
     nextAuthUrl: Boolean(process.env.NEXTAUTH_URL),
     authSecret: Boolean(process.env.NEXTAUTH_SECRET),
