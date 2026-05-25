@@ -93,6 +93,7 @@ import java.nio.charset.StandardCharsets
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
+import java.time.DayOfWeek
 import java.time.format.DateTimeFormatter
 
 class MainActivity : ComponentActivity() {
@@ -856,6 +857,7 @@ fun DriverToolsScreen(
     var availabilityEnd by remember { mutableStateOf("${LocalDate.now().plusDays(1)}T17:00") }
     var availabilityStatus by remember { mutableStateOf("AVAILABLE") }
     var availabilityType by remember { mutableStateOf("one_time") }
+    var recurrenceRule by remember { mutableStateOf("") }
     var maxDistance by remember { mutableStateOf("") }
     var counties by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
@@ -901,13 +903,55 @@ fun DriverToolsScreen(
         item {
             Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Add availability", color = CarsColors.Navy, fontSize = 21.sp, fontWeight = FontWeight.Black)
+                    Text("Schedule availability", color = CarsColors.Navy, fontSize = 21.sp, fontWeight = FontWeight.Black)
+                    Text("Use a quick preset, then adjust date, time, counties, or notes.", color = CarsColors.Muted, lineHeight = 20.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PresetButton("Tomorrow", Modifier.weight(1f)) {
+                            val day = LocalDate.now().plusDays(1)
+                            availabilityType = "one_time"
+                            availabilityStatus = "AVAILABLE"
+                            availabilityStart = "${day}T09:00"
+                            availabilityEnd = "${day}T17:00"
+                            recurrenceRule = ""
+                            notes = "Available for regular rides."
+                        }
+                        PresetButton("Saturday", Modifier.weight(1f)) {
+                            val day = nextSaturday()
+                            availabilityType = "one_time"
+                            availabilityStatus = "AVAILABLE"
+                            availabilityStart = "${day}T09:00"
+                            availabilityEnd = "${day}T15:00"
+                            recurrenceRule = ""
+                            notes = "Saturday availability."
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PresetButton("Weekly", Modifier.weight(1f)) {
+                            val day = LocalDate.now().plusDays(1)
+                            availabilityType = "recurring"
+                            availabilityStatus = "AVAILABLE"
+                            availabilityStart = "${day}T09:00"
+                            availabilityEnd = "${day}T17:00"
+                            recurrenceRule = "FREQ=WEEKLY"
+                            notes = "Recurring weekly availability."
+                        }
+                        PresetButton("Blackout", Modifier.weight(1f)) {
+                            val day = LocalDate.now().plusDays(1)
+                            availabilityType = "blackout"
+                            availabilityStatus = "UNAVAILABLE"
+                            availabilityStart = "${day}T00:00"
+                            availabilityEnd = "${day}T23:59"
+                            recurrenceRule = ""
+                            notes = "Unavailable."
+                        }
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(availabilityType, { availabilityType = it }, label = { Text("Type") }, modifier = Modifier.weight(1f))
                         OutlinedTextField(availabilityStatus, { availabilityStatus = it }, label = { Text("Status") }, modifier = Modifier.weight(1f))
                     }
                     OutlinedTextField(availabilityStart, { availabilityStart = it }, label = { Text("Starts YYYY-MM-DDTHH:MM") }, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(availabilityEnd, { availabilityEnd = it }, label = { Text("Ends YYYY-MM-DDTHH:MM") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(recurrenceRule, { recurrenceRule = it }, label = { Text("Recurring rule (optional)") }, modifier = Modifier.fillMaxWidth())
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(counties, { counties = it }, label = { Text("Counties") }, modifier = Modifier.weight(1f))
                         OutlinedTextField(maxDistance, { maxDistance = it }, label = { Text("Max mi") }, modifier = Modifier.weight(1f))
@@ -920,6 +964,7 @@ fun DriverToolsScreen(
                                 status = availabilityStatus.ifBlank { "AVAILABLE" },
                                 startsAt = availabilityStart,
                                 endsAt = availabilityEnd,
+                                recurrenceRule = recurrenceRule.ifBlank { null },
                                 preferredCounties = counties.split(",").map { it.trim() }.filter { it.isNotBlank() },
                                 maxDistanceMiles = maxDistance.toIntOrNull(),
                                 notes = notes.ifBlank { null }
@@ -972,6 +1017,13 @@ fun DriverToolsScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun PresetButton(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    OutlinedButton(onClick = onClick, modifier = modifier.height(48.dp)) {
+        Text(label, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -1511,6 +1563,14 @@ fun formatTime(value: String): String {
     return runCatching {
         OffsetDateTime.parse(value).format(DateTimeFormatter.ofPattern("h:mm a"))
     }.getOrDefault(value)
+}
+
+fun nextSaturday(): LocalDate {
+    var day = LocalDate.now().plusDays(1)
+    while (day.dayOfWeek != DayOfWeek.SATURDAY) {
+        day = day.plusDays(1)
+    }
+    return day
 }
 
 fun String.prettyDateTime(): String {

@@ -267,6 +267,7 @@ data class DriverAvailabilityPayload(
     val status: String,
     val startsAt: String,
     val endsAt: String,
+    val recurrenceRule: String? = null,
     val preferredCounties: List<String> = emptyList(),
     val maxDistanceMiles: Int? = null,
     val notes: String? = null
