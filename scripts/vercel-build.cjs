@@ -25,7 +25,9 @@ function run(command, args) {
   }
 }
 
-const skipDatabaseBootstrap = env.CARS_SKIP_DB_BOOTSTRAP === "true";
+const dbOnly = process.argv.includes("--db-only");
+const allowDatabaseBootstrap = env.CARS_AUTO_DB_BOOTSTRAP === "true";
+const skipDatabaseBootstrap = env.CARS_SKIP_DB_BOOTSTRAP === "true" || !allowDatabaseBootstrap;
 
 if (!skipDatabaseBootstrap) {
   if (!env.DATABASE_URL) {
@@ -44,10 +46,20 @@ if (!skipDatabaseBootstrap) {
     console.warn("For Neon, set DIRECT_URL or DATABASE_URL_UNPOOLED to the direct non-pooler connection string in Vercel.");
   }
 
-  run("prisma", ["db", "push", "--skip-generate"]);
+  const dbPushArgs = ["db", "push", "--skip-generate"];
+
+  if (env.CARS_ACCEPT_DB_PUSH_WARNINGS === "true") {
+    dbPushArgs.push("--accept-data-loss");
+  }
+
+  run("prisma", dbPushArgs);
   run("node", ["prisma/bootstrap-production.js"]);
 } else {
-  console.log("Skipping database bootstrap because CARS_SKIP_DB_BOOTSTRAP=true.");
+  console.log("Skipping database bootstrap. Set CARS_AUTO_DB_BOOTSTRAP=true to run it deliberately.");
+}
+
+if (dbOnly) {
+  process.exit(0);
 }
 
 run("prisma", ["generate"]);

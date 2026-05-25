@@ -78,7 +78,9 @@ Required production variables:
 - `NEXT_PUBLIC_APP_NAME`: public app name.
 - `HEALTHCHECK_SECRET`: optional secret for `/api/health`.
 - `MOBILE_LOGIN_CODE`: optional shared access code for the Android driver app login while full password/auth-provider login is added.
-- `CARS_SKIP_DB_BOOTSTRAP`: optional escape hatch. Leave `false` for a fresh Neon database; set `true` only when schema initialization is handled separately.
+- `CARS_SKIP_DB_BOOTSTRAP`: optional escape hatch. Vercel builds already skip database bootstrap unless `CARS_AUTO_DB_BOOTSTRAP=true`.
+- `CARS_AUTO_DB_BOOTSTRAP`: set to `true` only for a deliberate one-off database bootstrap/schema sync run.
+- `CARS_ACCEPT_DB_PUSH_WARNINGS`: set to `true` only when intentionally allowing Prisma `db push --accept-data-loss` warnings after reviewing the database impact.
 - `NODE_ENV`: set by Vercel.
 
 Deployment flow:
@@ -87,10 +89,11 @@ Deployment flow:
 2. Copy the pooled Neon connection string into `DATABASE_URL`.
 3. Copy the direct Neon connection string into `DIRECT_URL`. If Vercel created `DATABASE_URL_UNPOOLED` for you, that is also accepted by the build script.
 4. Add auth/app variables to Vercel.
-5. Deploy to Vercel. For the MVP bootstrap, the Vercel build runs `scripts/vercel-build.cjs`, which initializes the database with `prisma db push --skip-generate`, runs the production bootstrap, generates Prisma Client, and then runs `next build`.
-6. For mature production releases, replace the bootstrap push with committed Prisma migrations and run `npm run prisma:deploy` from a trusted release environment.
-7. Optionally seed demo data only with `ALLOW_PRODUCTION_SEED=true npm run db:seed`.
-8. Verify production health at `/api/health`.
+5. Initialize or update the Neon schema from a trusted environment, not as part of every Vercel build. For the current MVP schema-sync path, run `CARS_AUTO_DB_BOOTSTRAP=true npm run vercel-build -- --db-only`. If Prisma reports a reviewed warning, rerun with `CARS_ACCEPT_DB_PUSH_WARNINGS=true`.
+6. Deploy to Vercel. Normal Vercel builds generate Prisma Client and run `next build`; they do not mutate the database unless `CARS_AUTO_DB_BOOTSTRAP=true` is explicitly set.
+7. For mature production releases, replace the bootstrap push with committed Prisma migrations and run `npm run prisma:deploy` from a trusted release environment.
+8. Optionally seed demo data only with `ALLOW_PRODUCTION_SEED=true npm run db:seed`.
+9. Verify production health at `/api/health`.
 
 If a Vercel build fails before `next build`, confirm the Neon URLs are present. `DATABASE_URL` should be the pooled `-pooler` URL for runtime queries. `DIRECT_URL` or `DATABASE_URL_UNPOOLED` should be the direct non-pooler URL for schema work. The build script only falls back to `DATABASE_URL` when neither direct URL name is available.
 

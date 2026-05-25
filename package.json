@@ -18,6 +18,7 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:bootstrap": "node prisma/bootstrap-production.js",
+    "db:bootstrap:vercel": "node scripts/vercel-build.cjs --db-only",
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "db:seed": "prisma db seed"
