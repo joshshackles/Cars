@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -31,6 +32,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
@@ -120,11 +122,33 @@ fun CarsDriverApp() {
     var error by remember { mutableStateOf<String?>(null) }
     var supportMessage by remember { mutableStateOf<String?>(null) }
     var screen by remember { mutableStateOf(MobileScreen.PublicHome) }
+    var backStack by remember { mutableStateOf<List<MobileScreen>>(emptyList()) }
     var driverCabinetSection by remember { mutableStateOf<String?>(null) }
     var selectedRideFilter by remember { mutableStateOf("today") }
     var activeTracking by remember { mutableStateOf<TrackingState?>(null) }
     var trackingJob by remember { mutableStateOf<Job?>(null) }
     val api = remember(session?.token) { CarsApi { session?.token } }
+
+    fun resetTo(nextScreen: MobileScreen) {
+        backStack = emptyList()
+        screen = nextScreen
+    }
+
+    fun navigateTo(nextScreen: MobileScreen) {
+        if (screen == nextScreen) return
+        backStack = backStack + screen
+        screen = nextScreen
+    }
+
+    fun goBack() {
+        val previous = backStack.lastOrNull()
+        if (previous != null) {
+            backStack = backStack.dropLast(1)
+            screen = previous
+        } else {
+            screen = if (session == null) MobileScreen.PublicHome else MobileScreen.Home
+        }
+    }
 
     fun locationClient(): DriverLocationClient {
         return DriverLocationClient(context.applicationContext)
@@ -162,7 +186,7 @@ fun CarsDriverApp() {
         val stored = sessionStore.load()
         session = stored
         if (stored != null) {
-            screen = MobileScreen.Home
+            resetTo(MobileScreen.Home)
             busy = true
             runCatching { CarsApi { stored.token }.manifest(LocalDate.now().toString()) }
                 .onSuccess { manifest = it }
@@ -172,7 +196,7 @@ fun CarsDriverApp() {
                         session = null
                         profile = null
                         manifest = null
-                        screen = MobileScreen.Login
+                        resetTo(MobileScreen.Login)
                         error = "Please sign in again for this CARS Dispatch deployment."
                     } else {
                         error = it.message
@@ -191,8 +215,11 @@ fun CarsDriverApp() {
     CarsTheme {
         Surface(color = CarsColors.Soft, modifier = Modifier.fillMaxSize()) {
             val currentSession = session
+            BackHandler(enabled = screen != MobileScreen.PublicHome && screen != MobileScreen.Home) {
+                goBack()
+            }
             if (currentSession == null && screen == MobileScreen.PublicHome) {
-                PublicHomeScreen(onLogin = { screen = MobileScreen.Login })
+                PublicHomeScreen(onLogin = { navigateTo(MobileScreen.Login) })
             } else if (currentSession == null) {
                 LoginScreen(
                     busy = busy,
@@ -206,7 +233,7 @@ fun CarsDriverApp() {
                                 val nextApi = CarsApi { nextSession.token }
                                 sessionStore.save(nextSession)
                                 session = nextSession
-                                screen = MobileScreen.Home
+                                resetTo(MobileScreen.Home)
 
                                 runCatching { nextApi.profile() }
                                     .onSuccess { profile = it }
@@ -234,19 +261,19 @@ fun CarsDriverApp() {
                     error = error,
                     activeTracking = activeTracking,
                     onRefresh = ::refreshManifest,
-                    onBackHome = { screen = MobileScreen.Home },
+                    onBackHome = { resetTo(MobileScreen.Home) },
                     onOpenSettings = {
                         driverCabinetSection = DriverCabinetSections.DriverInfo
-                        screen = MobileScreen.DriverSettings
+                        navigateTo(MobileScreen.DriverSettings)
                     },
-                    onRequestRide = { screen = MobileScreen.DriverHelp },
-                    onProfile = { screen = MobileScreen.Profile },
-                    onAvailability = { screen = MobileScreen.DriverAvailability },
-                    onVehicle = { screen = MobileScreen.DriverVehicle },
-                    onRides = { selectedRideFilter = "all"; screen = MobileScreen.DriverRides },
-                    onMileage = { screen = MobileScreen.DriverMileage },
-                    onPay = { screen = MobileScreen.DriverReimbursements },
-                    onSupport = { screen = MobileScreen.DriverSupport },
+                    onRequestRide = { navigateTo(MobileScreen.DriverHelp) },
+                    onProfile = { navigateTo(MobileScreen.Profile) },
+                    onAvailability = { navigateTo(MobileScreen.DriverAvailability) },
+                    onVehicle = { navigateTo(MobileScreen.DriverVehicle) },
+                    onRides = { selectedRideFilter = "all"; navigateTo(MobileScreen.DriverRides) },
+                    onMileage = { navigateTo(MobileScreen.DriverMileage) },
+                    onPay = { navigateTo(MobileScreen.DriverReimbursements) },
+                    onSupport = { navigateTo(MobileScreen.DriverSupport) },
                     onLogout = {
                         scope.launch {
                             runCatching { api.logout() }
@@ -257,7 +284,7 @@ fun CarsDriverApp() {
                             manifest = null
                             driverTools = null
                             activeTracking = null
-                            screen = MobileScreen.PublicHome
+                            resetTo(MobileScreen.PublicHome)
                         }
                     },
                     onAction = { _, action ->
@@ -318,10 +345,11 @@ fun CarsDriverApp() {
                     busy = busy,
                     error = error,
                     supportMessage = supportMessage,
-                    onNavigate = { screen = it },
+                    onNavigate = { navigateTo(it) },
+                    onBack = { goBack() },
                     onOpenDriverCabinet = { section ->
                         driverCabinetSection = section
-                        screen = MobileScreen.DriverTools
+                        navigateTo(MobileScreen.DriverTools)
                     },
                     onLogout = {
                         scope.launch {
@@ -333,7 +361,7 @@ fun CarsDriverApp() {
                             manifest = null
                             driverTools = null
                             activeTracking = null
-                            screen = MobileScreen.PublicHome
+                            resetTo(MobileScreen.PublicHome)
                         }
                     },
                     onSaveProfile = { payload ->
@@ -351,7 +379,7 @@ fun CarsDriverApp() {
                             error = null
                             runCatching {
                                 api.requestRide(payload)
-                                screen = MobileScreen.Home
+                                resetTo(MobileScreen.Home)
                             }.onFailure { error = it.message }
                             busy = false
                         }
@@ -491,6 +519,7 @@ fun MobileHomeScaffold(
     error: String?,
     supportMessage: String?,
     onNavigate: (MobileScreen) -> Unit,
+    onBack: () -> Unit,
     onOpenDriverCabinet: (String) -> Unit,
     onLogout: () -> Unit,
     onSaveProfile: (ProfileUpdatePayload) -> Unit,
@@ -508,8 +537,8 @@ fun MobileHomeScaffold(
     Column(Modifier.fillMaxSize()) {
         MobileHeader(session = session, profile = profile, onLogout = onLogout)
         when (screen) {
-            MobileScreen.Profile -> ProfileForm(profile = profile, session = session, busy = busy, error = error, onSave = onSaveProfile, onBack = { onNavigate(MobileScreen.Home) })
-            MobileScreen.RideRequest -> RideRequestForm(profile = profile, busy = busy, error = error, onSubmit = onRequestRide, onBack = { onNavigate(MobileScreen.Home) })
+            MobileScreen.Profile -> ProfileForm(profile = profile, session = session, busy = busy, error = error, onSave = onSaveProfile, onBack = onBack)
+            MobileScreen.RideRequest -> RideRequestForm(profile = profile, busy = busy, error = error, onSubmit = onRequestRide, onBack = onBack)
             MobileScreen.DriverTools -> DriverToolsScreen(
                 tools = driverTools,
                 initialSection = driverCabinetSection,
@@ -518,7 +547,7 @@ fun MobileHomeScaffold(
                 onRefresh = onRefreshDriverTools,
                 onSaveDriverInfo = onSaveDriverInfo,
                 onAddAvailability = onAddAvailability,
-                onBack = { onNavigate(MobileScreen.Home) }
+                onBack = onBack
             )
             MobileScreen.DriverAvailability -> DriverAvailabilityScreen(
                 tools = driverTools,
@@ -526,7 +555,7 @@ fun MobileHomeScaffold(
                 error = error,
                 onRefresh = onRefreshDriverTools,
                 onAddAvailability = onAddAvailability,
-                onBack = { onNavigate(MobileScreen.Home) }
+                onBack = onBack
             )
             MobileScreen.DriverVehicle -> DriverVehicleScreen(
                 tools = driverTools,
@@ -534,23 +563,23 @@ fun MobileHomeScaffold(
                 error = error,
                 onSaveDriverInfo = onSaveDriverInfo,
                 onReportVehicleIssue = { onNavigate(MobileScreen.DriverHelp) },
-                onBack = { onNavigate(MobileScreen.Home) }
+                onBack = onBack
             )
             MobileScreen.DriverRides -> DriverRidesScreen(
                 tools = driverTools,
                 manifest = manifest,
                 selectedFilter = rideFilter,
-                onBack = { onNavigate(MobileScreen.Home) }
+                onBack = onBack
             )
             MobileScreen.DriverMileage -> DriverMileageScreen(
                 tools = driverTools,
                 manifest = manifest,
                 activeTracking = activeTracking,
-                onBack = { onNavigate(MobileScreen.Home) }
+                onBack = onBack
             )
             MobileScreen.DriverReimbursements -> DriverReimbursementsScreen(
                 tools = driverTools,
-                onBack = { onNavigate(MobileScreen.Home) }
+                onBack = onBack
             )
             MobileScreen.DriverHelp -> DriverHelpScreen(
                 manifest = manifest,
@@ -558,7 +587,7 @@ fun MobileHomeScaffold(
                 error = error,
                 supportMessage = supportMessage,
                 onSubmit = onSubmitSupportRequest,
-                onBack = { onNavigate(MobileScreen.Home) }
+                onBack = onBack
             )
             MobileScreen.DriverSettings -> DriverSettingsScreen(
                 session = session,
@@ -566,12 +595,12 @@ fun MobileHomeScaffold(
                 onOpenDriverCabinet = { onNavigate(MobileScreen.DriverTools) },
                 onSupport = { onNavigate(MobileScreen.DriverSupport) },
                 onLogout = onLogout,
-                onBack = { onNavigate(MobileScreen.Home) }
+                onBack = onBack
             )
             MobileScreen.DriverSupport -> DriverSupportScreen(
                 session = session,
                 onHelpRequest = { onNavigate(MobileScreen.DriverHelp) },
-                onBack = { onNavigate(MobileScreen.Home) }
+                onBack = onBack
             )
             else -> MobileHomeScreen(
                 session = session,
@@ -1050,6 +1079,8 @@ fun BackTitle(title: String, subtitle: String, onBack: () -> Unit) {
                 Text(subtitle, color = CarsColors.Muted)
             }
             OutlinedButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = CarsColors.Navy)
+                Spacer(Modifier.width(6.dp))
                 Text("Back")
             }
         }
@@ -1942,6 +1973,10 @@ fun DriverDashboard(
         if (!hasLocationPermission(context)) {
             permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
         }
+    }
+
+    BackHandler(enabled = selectedAssignmentId != null) {
+        selectedAssignmentId = null
     }
 
     Column(Modifier.fillMaxSize()) {

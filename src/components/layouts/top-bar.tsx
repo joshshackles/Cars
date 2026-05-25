@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Bell, ChevronDown, Phone, Search, Settings, UserRound } from "lucide-react";
 import { signOutAction } from "@/actions/auth-actions";
+import { HistoryBackButton } from "@/components/layouts/history-back-button";
 import { MobileSidebar } from "@/components/layouts/mobile-sidebar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ export function TopBar({
     <header className="sticky top-0 z-20 flex min-h-20 items-center justify-between border-b-4 border-cars-navy bg-cars-red px-4 text-white shadow-md sm:px-6 lg:px-8">
       <div className="flex flex-1 items-center gap-3">
         <MobileSidebar membership={user.activeMembership} />
+        <HistoryBackButton />
         {canSearchRiders ? (
           <form action="/riders" className="hidden h-12 w-full max-w-lg items-center gap-3 rounded-md bg-white px-4 text-sm text-slate-500 shadow-sm md:flex">
             <label htmlFor="global-rider-search" className="sr-only">Search riders</label>
