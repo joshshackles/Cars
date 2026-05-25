@@ -179,6 +179,290 @@ export async function getMobileManifest(context: MobileUserContext, date?: Date)
   };
 }
 
+export async function getMobileDriverTools(context: MobileUserContext) {
+  assertDriverPortalContext(context);
+  const now = new Date();
+  const [driver, upcomingAssignments, pastAssignments, mileageRecords, reimbursementBatches] =
+    await Promise.all([
+      db.driver.findFirstOrThrow({
+        where: {
+          id: context.driver.id,
+          organizationId: context.membership.organizationId,
+          deletedAt: null,
+        },
+        include: {
+          availabilities: {
+            where: { deletedAt: null },
+            orderBy: [{ startsAt: "asc" }],
+            take: 20,
+          },
+        },
+      }),
+      db.assignment.findMany({
+        where: {
+          organizationId: context.membership.organizationId,
+          driverId: context.driver.id,
+          deletedAt: null,
+          status: "ACCEPTED",
+          tripLeg: {
+            deletedAt: null,
+            scheduledPickupAt: { gte: now },
+          },
+        },
+        include: {
+          tripLeg: {
+            include: {
+              rideRequest: {
+                include: { rider: true },
+              },
+            },
+          },
+        },
+        orderBy: [{ tripLeg: { scheduledPickupAt: "asc" } }],
+        take: 10,
+      }),
+      db.assignment.findMany({
+        where: {
+          organizationId: context.membership.organizationId,
+          driverId: context.driver.id,
+          deletedAt: null,
+          OR: [{ status: "COMPLETED" }, { tripLeg: { status: "COMPLETED" } }],
+        },
+        include: {
+          mileageRecord: true,
+          tripLeg: {
+            include: {
+              rideRequest: {
+                include: { rider: true },
+              },
+            },
+          },
+        },
+        orderBy: [{ tripLeg: { scheduledPickupAt: "desc" } }],
+        take: 10,
+      }),
+      db.mileageRecord.findMany({
+        where: {
+          organizationId: context.membership.organizationId,
+          driverId: context.driver.id,
+          deletedAt: null,
+        },
+        include: {
+          reimbursementBatch: true,
+          tripLeg: {
+            include: {
+              rideRequest: {
+                include: { rider: true },
+              },
+            },
+          },
+        },
+        orderBy: [{ serviceDate: "desc" }],
+        take: 12,
+      }),
+      db.reimbursementBatch.findMany({
+        where: {
+          organizationId: context.membership.organizationId,
+          driverId: context.driver.id,
+          deletedAt: null,
+        },
+        orderBy: [{ periodEnd: "desc" }],
+        take: 8,
+      }),
+    ]);
+
+  const pendingCents = mileageRecords
+    .filter((record) => ["SUBMITTED", "APPROVED", "BATCHED"].includes(record.status))
+    .reduce((total, record) => total + record.amountCents, 0);
+  const paidCents = reimbursementBatches
+    .filter((batch) => batch.status === "PAID")
+    .reduce((total, batch) => total + batch.totalCents, 0);
+
+  return {
+    driver: {
+      id: driver.id,
+      name: driver.displayName,
+      phone: driver.phone,
+      email: driver.email,
+      status: driver.status,
+      vehicleMake: driver.vehicleMake,
+      vehicleModel: driver.vehicleModel,
+      vehicleYear: driver.vehicleYear,
+      vehicleLabel: driver.vehicleLabel,
+      insuranceVerificationDate: driver.insuranceVerificationDate?.toISOString() ?? null,
+      reimbursementPreference: driver.reimbursementPreference,
+      availabilities: driver.availabilities.map((availability) => ({
+        id: availability.id,
+        status: availability.status,
+        availabilityType: availability.availabilityType,
+        startsAt: availability.startsAt.toISOString(),
+        endsAt: availability.endsAt.toISOString(),
+        preferredCounties: Array.isArray(availability.preferredCounties)
+          ? availability.preferredCounties.map(String)
+          : [],
+        maxDistanceMiles: availability.maxDistanceMiles,
+        notes: availability.notes,
+      })),
+    },
+    upcomingRides: upcomingAssignments.map(toMobileRideSummary),
+    pastRides: pastAssignments.map(toMobileRideSummary),
+    reimbursement: {
+      pendingCents,
+      paidCents,
+      mileageRecords: mileageRecords.map((record) => ({
+        id: record.id,
+        serviceDate: record.serviceDate.toISOString(),
+        miles: record.miles.toString(),
+        amountCents: record.amountCents,
+        status: record.status,
+        riderName: record.tripLeg.rideRequest.rider.displayName,
+        batchNumber: record.reimbursementBatch?.batchNumber ?? null,
+        batchStatus: record.reimbursementBatch?.status ?? null,
+      })),
+      batches: reimbursementBatches.map((batch) => ({
+        id: batch.id,
+        batchNumber: batch.batchNumber,
+        status: batch.status,
+        periodStart: batch.periodStart.toISOString(),
+        periodEnd: batch.periodEnd.toISOString(),
+        tripCount: batch.tripCount,
+        totalMiles: batch.totalMiles.toString(),
+        totalCents: batch.totalCents,
+        paymentStatus: batch.paymentStatus,
+        paidAt: batch.paidAt?.toISOString() ?? null,
+      })),
+    },
+  };
+}
+
+export async function updateMobileDriverInfo(context: MobileUserContext, body: unknown) {
+  assertDriverPortalContext(context);
+  const input = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
+  const vehicleYear = optionalInteger(input.vehicleYear);
+  const vehicleMake = optionalString(input.vehicleMake);
+  const vehicleModel = optionalString(input.vehicleModel);
+  const insuranceVerificationDate = optionalDate(input.insuranceVerificationDate);
+  const reimbursementPreference = optionalString(input.reimbursementPreference);
+  const vehicleLabel = [vehicleYear, vehicleMake, vehicleModel].filter(Boolean).join(" ");
+
+  await db.driver.update({
+    where: { id: context.driver.id },
+    data: {
+      vehicleYear,
+      vehicleMake,
+      vehicleModel,
+      insuranceVerificationDate,
+      reimbursementPreference,
+      vehicleLabel: vehicleLabel || null,
+      updatedById: context.user.id,
+    },
+  });
+
+  await db.auditLog.create({
+    data: {
+      organizationId: context.membership.organizationId,
+      actorUserId: context.user.id,
+      action: "mobile.driver_info_updated",
+      entityType: "Driver",
+      entityId: context.driver.id,
+      driverId: context.driver.id,
+      metadata: {
+        vehicleLabel: vehicleLabel || null,
+        insuranceVerificationDate: insuranceVerificationDate?.toISOString() ?? null,
+        reimbursementPreference,
+      },
+    },
+  });
+
+  return getMobileDriverTools(context);
+}
+
+export async function createMobileDriverAvailability(context: MobileUserContext, body: unknown) {
+  assertDriverPortalContext(context);
+  const input = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
+  const startsAt = requiredDate(input.startsAt, "startsAt");
+  const endsAt = requiredDate(input.endsAt, "endsAt");
+
+  if (endsAt <= startsAt) {
+    throw new Error("Availability end must be after the start.");
+  }
+
+  const preferredCounties = Array.isArray(input.preferredCounties)
+    ? input.preferredCounties.map(String).filter(Boolean)
+    : [];
+  const status = availabilityStatus(input.status);
+  const availabilityType = availabilityTypeValue(input.availabilityType);
+
+  await db.driverAvailability.create({
+    data: {
+      organizationId: context.membership.organizationId,
+      driverId: context.driver.id,
+      status,
+      availabilityType,
+      startsAt,
+      endsAt,
+      preferredCounties,
+      maxDistanceMiles: optionalInteger(input.maxDistanceMiles),
+      notes: optionalString(input.notes),
+      createdById: context.user.id,
+      updatedById: context.user.id,
+    },
+  });
+
+  await db.auditLog.create({
+    data: {
+      organizationId: context.membership.organizationId,
+      actorUserId: context.user.id,
+      action: "mobile.availability_created",
+      entityType: "Driver",
+      entityId: context.driver.id,
+      driverId: context.driver.id,
+      metadata: {
+        status,
+        availabilityType,
+        startsAt: startsAt.toISOString(),
+        endsAt: endsAt.toISOString(),
+      },
+    },
+  });
+
+  return getMobileDriverTools(context);
+}
+
+export async function removeMobileDriverAvailability(context: MobileUserContext, availabilityId: string) {
+  assertDriverPortalContext(context);
+  const availability = await db.driverAvailability.findFirstOrThrow({
+    where: {
+      id: availabilityId,
+      organizationId: context.membership.organizationId,
+      driverId: context.driver.id,
+      deletedAt: null,
+    },
+  });
+
+  await db.driverAvailability.update({
+    where: { id: availability.id },
+    data: {
+      deletedAt: new Date(),
+      deletedById: context.user.id,
+      updatedById: context.user.id,
+    },
+  });
+
+  await db.auditLog.create({
+    data: {
+      organizationId: context.membership.organizationId,
+      actorUserId: context.user.id,
+      action: "mobile.availability_removed",
+      entityType: "DriverAvailability",
+      entityId: availability.id,
+      driverId: context.driver.id,
+    },
+  });
+
+  return getMobileDriverTools(context);
+}
+
 export async function acceptMobileAssignment(context: MobileUserContext, assignmentId: string) {
   assertDriverPortalContext(context);
   const assignment = await getMobileAssignment(context, assignmentId);
@@ -733,4 +1017,98 @@ function optionalNumber(value: unknown) {
 
 function toRadians(value: number) {
   return (value * Math.PI) / 180;
+}
+
+function toMobileRideSummary(assignment: {
+  id: string;
+  status: string;
+  mileageRecord?: { miles: Prisma.Decimal; amountCents: number; status: string } | null;
+  tripLeg: {
+    status: string;
+    scheduledPickupAt: Date;
+    pickupAddress: string | null;
+    pickupCity: string | null;
+    pickupCounty: string | null;
+    dropoffAddress: string | null;
+    dropoffCity: string | null;
+    dropoffCounty: string | null;
+    rideRequest: {
+      purpose: string;
+      rider: {
+        displayName: string;
+      };
+    };
+  };
+}) {
+  return {
+    id: assignment.id,
+    status: assignment.status,
+    tripStatus: assignment.tripLeg.status,
+    scheduledPickupAt: assignment.tripLeg.scheduledPickupAt.toISOString(),
+    riderName: assignment.tripLeg.rideRequest.rider.displayName,
+    purpose: assignment.tripLeg.rideRequest.purpose,
+    pickupAddress: assignment.tripLeg.pickupAddress,
+    pickupCity: assignment.tripLeg.pickupCity,
+    pickupCounty: assignment.tripLeg.pickupCounty,
+    dropoffAddress: assignment.tripLeg.dropoffAddress,
+    dropoffCity: assignment.tripLeg.dropoffCity,
+    dropoffCounty: assignment.tripLeg.dropoffCounty,
+    mileage: assignment.mileageRecord
+      ? {
+          miles: assignment.mileageRecord.miles.toString(),
+          amountCents: assignment.mileageRecord.amountCents,
+          status: assignment.mileageRecord.status,
+        }
+      : null,
+  };
+}
+
+function optionalString(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function optionalInteger(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const number = Number(value);
+  if (!Number.isInteger(number)) {
+    throw new Error("Expected a whole number.");
+  }
+
+  return number;
+}
+
+function optionalDate(value: unknown) {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return null;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error("Expected a valid date.");
+  }
+
+  return date;
+}
+
+function requiredDate(value: unknown, label: string) {
+  const date = optionalDate(value);
+
+  if (!date) {
+    throw new Error(`${label} is required.`);
+  }
+
+  return date;
+}
+
+function availabilityStatus(value: unknown) {
+  return value === "AVAILABLE" || value === "UNAVAILABLE" || value === "TENTATIVE"
+    ? value
+    : "AVAILABLE";
+}
+
+function availabilityTypeValue(value: unknown) {
+  return value === "one_time" || value === "recurring" || value === "blackout" ? value : "one_time";
 }

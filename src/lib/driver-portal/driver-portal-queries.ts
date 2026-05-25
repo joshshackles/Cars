@@ -86,6 +86,126 @@ export async function getDriverManifest(organizationId: string, driverId: string
   });
 }
 
+export async function getDriverPortalWorkspace(organizationId: string, driverId: string) {
+  const now = new Date();
+
+  const [driver, upcomingAssignments, pastAssignments, mileageRecords, reimbursementBatches] =
+    await Promise.all([
+      db.driver.findFirstOrThrow({
+        where: {
+          id: driverId,
+          organizationId,
+          deletedAt: null,
+        },
+        include: {
+          availabilities: {
+            where: { deletedAt: null },
+            orderBy: [{ startsAt: "asc" }],
+            take: 12,
+          },
+        },
+      }),
+      db.assignment.findMany({
+        where: {
+          organizationId,
+          driverId,
+          deletedAt: null,
+          status: "ACCEPTED",
+          tripLeg: {
+            deletedAt: null,
+            scheduledPickupAt: { gte: now },
+          },
+        },
+        include: {
+          tripLeg: {
+            include: {
+              rideRequest: {
+                include: {
+                  rider: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: [{ tripLeg: { scheduledPickupAt: "asc" } }],
+        take: 8,
+      }),
+      db.assignment.findMany({
+        where: {
+          organizationId,
+          driverId,
+          deletedAt: null,
+          OR: [{ status: "COMPLETED" }, { tripLeg: { status: "COMPLETED" } }],
+        },
+        include: {
+          mileageRecord: true,
+          tripLeg: {
+            include: {
+              rideRequest: {
+                include: {
+                  rider: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: [{ tripLeg: { scheduledPickupAt: "desc" } }],
+        take: 8,
+      }),
+      db.mileageRecord.findMany({
+        where: {
+          organizationId,
+          driverId,
+          deletedAt: null,
+        },
+        include: {
+          reimbursementBatch: true,
+          tripLeg: {
+            include: {
+              rideRequest: {
+                include: {
+                  rider: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: [{ serviceDate: "desc" }],
+        take: 12,
+      }),
+      db.reimbursementBatch.findMany({
+        where: {
+          organizationId,
+          driverId,
+          deletedAt: null,
+        },
+        orderBy: [{ periodEnd: "desc" }],
+        take: 6,
+      }),
+    ]);
+
+  const pendingCents = mileageRecords
+    .filter((record) => ["SUBMITTED", "APPROVED", "BATCHED"].includes(record.status))
+    .reduce((total, record) => total + record.amountCents, 0);
+  const paidCents = reimbursementBatches
+    .filter((batch) => batch.status === "PAID")
+    .reduce((total, batch) => total + batch.totalCents, 0);
+
+  return {
+    driver,
+    upcomingAssignments,
+    pastAssignments,
+    mileageRecords,
+    reimbursementBatches,
+    reimbursementSummary: {
+      pendingCents,
+      paidCents,
+      pendingMileageCount: mileageRecords.filter((record) => ["SUBMITTED", "APPROVED", "BATCHED"].includes(record.status)).length,
+      latestBatch: reimbursementBatches[0] ?? null,
+    },
+  };
+}
+
 export function getDayRange(date = new Date()): DriverPortalDateRange {
   const start = new Date(date);
   start.setHours(0, 0, 0, 0);

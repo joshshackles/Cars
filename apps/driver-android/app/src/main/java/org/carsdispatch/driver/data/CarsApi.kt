@@ -50,6 +50,26 @@ class CarsApi(private val tokenProvider: () -> String?) {
         return get("/api/mobile/user/profile", MobileProfile.serializer())
     }
 
+    suspend fun driverTools(): DriverToolsResponse {
+        return get("/api/mobile/driver/tools", DriverToolsResponse.serializer())
+    }
+
+    suspend fun updateDriverInfo(payload: DriverInfoUpdatePayload): DriverToolsResponse {
+        return post(
+            "/api/mobile/driver/tools",
+            json.encodeToString(DriverInfoUpdatePayload.serializer(), payload),
+            DriverToolsResponse.serializer()
+        )
+    }
+
+    suspend fun addAvailability(payload: DriverAvailabilityPayload): DriverToolsResponse {
+        return post(
+            "/api/mobile/driver/availability",
+            json.encodeToString(DriverAvailabilityPayload.serializer(), payload),
+            DriverToolsResponse.serializer()
+        )
+    }
+
     suspend fun updateProfile(payload: ProfileUpdatePayload): MobileProfile {
         return post(
             "/api/mobile/user/profile",

@@ -76,6 +76,10 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.carsdispatch.driver.data.CarsApi
+import org.carsdispatch.driver.data.DriverAvailabilityPayload
+import org.carsdispatch.driver.data.DriverInfoUpdatePayload
+import org.carsdispatch.driver.data.DriverRideSummary
+import org.carsdispatch.driver.data.DriverToolsResponse
 import org.carsdispatch.driver.data.ManifestAssignment
 import org.carsdispatch.driver.data.ManifestResponse
 import org.carsdispatch.driver.data.MobileProfile
@@ -106,6 +110,7 @@ fun CarsDriverApp() {
     var session by remember { mutableStateOf<MobileSession?>(null) }
     var profile by remember { mutableStateOf<MobileProfile?>(null) }
     var manifest by remember { mutableStateOf<ManifestResponse?>(null) }
+    var driverTools by remember { mutableStateOf<DriverToolsResponse?>(null) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var screen by remember { mutableStateOf(MobileScreen.PublicHome) }
@@ -133,6 +138,18 @@ fun CarsDriverApp() {
         }
     }
 
+    fun refreshDriverTools() {
+        if (session?.driver == null) return
+        scope.launch {
+            busy = true
+            error = null
+            runCatching { api.driverTools() }
+                .onSuccess { driverTools = it }
+                .onFailure { error = it.message }
+            busy = false
+        }
+    }
+
     LaunchedEffect(Unit) {
         val stored = sessionStore.load()
         session = stored
@@ -155,6 +172,10 @@ fun CarsDriverApp() {
                 }
             runCatching { CarsApi { stored.token }.profile() }
                 .onSuccess { profile = it }
+            if (stored.driver != null) {
+                runCatching { CarsApi { stored.token }.driverTools() }
+                    .onSuccess { driverTools = it }
+            }
             busy = false
         }
     }
@@ -180,10 +201,16 @@ fun CarsDriverApp() {
                                 } else {
                                     null
                                 }
+                                val nextDriverTools = if (nextSession.driver != null) {
+                                    nextApi.driverTools()
+                                } else {
+                                    null
+                                }
                                 sessionStore.save(nextSession)
                                 session = nextSession
                                 profile = nextApi.profile()
                                 manifest = nextManifest
+                                driverTools = nextDriverTools
                                 screen = MobileScreen.Home
                             }.onFailure {
                                 error = it.message
@@ -209,6 +236,7 @@ fun CarsDriverApp() {
                             session = null
                             profile = null
                             manifest = null
+                            driverTools = null
                             activeTracking = null
                             screen = MobileScreen.PublicHome
                         }
@@ -279,6 +307,7 @@ fun CarsDriverApp() {
                             session = null
                             profile = null
                             manifest = null
+                            driverTools = null
                             activeTracking = null
                             screen = MobileScreen.PublicHome
                         }
@@ -302,6 +331,26 @@ fun CarsDriverApp() {
                             }.onFailure { error = it.message }
                             busy = false
                         }
+                    },
+                    driverTools = driverTools,
+                    onRefreshDriverTools = ::refreshDriverTools,
+                    onSaveDriverInfo = { payload ->
+                        scope.launch {
+                            busy = true
+                            error = null
+                            runCatching { driverTools = api.updateDriverInfo(payload) }
+                                .onFailure { error = it.message }
+                            busy = false
+                        }
+                    },
+                    onAddAvailability = { payload ->
+                        scope.launch {
+                            busy = true
+                            error = null
+                            runCatching { driverTools = api.addAvailability(payload) }
+                                .onFailure { error = it.message }
+                            busy = false
+                        }
                     }
                 )
             }
@@ -317,6 +366,7 @@ enum class MobileScreen {
     Home,
     Profile,
     RideRequest,
+    DriverTools,
     DriverDashboard
 }
 
@@ -382,13 +432,26 @@ fun MobileHomeScaffold(
     onNavigate: (MobileScreen) -> Unit,
     onLogout: () -> Unit,
     onSaveProfile: (ProfileUpdatePayload) -> Unit,
-    onRequestRide: (RideRequestPayload) -> Unit
+    onRequestRide: (RideRequestPayload) -> Unit,
+    driverTools: DriverToolsResponse?,
+    onRefreshDriverTools: () -> Unit,
+    onSaveDriverInfo: (DriverInfoUpdatePayload) -> Unit,
+    onAddAvailability: (DriverAvailabilityPayload) -> Unit
 ) {
     Column(Modifier.fillMaxSize()) {
         MobileHeader(session = session, profile = profile, onLogout = onLogout)
         when (screen) {
             MobileScreen.Profile -> ProfileForm(profile = profile, session = session, busy = busy, error = error, onSave = onSaveProfile, onBack = { onNavigate(MobileScreen.Home) })
             MobileScreen.RideRequest -> RideRequestForm(profile = profile, busy = busy, error = error, onSubmit = onRequestRide, onBack = { onNavigate(MobileScreen.Home) })
+            MobileScreen.DriverTools -> DriverToolsScreen(
+                tools = driverTools,
+                busy = busy,
+                error = error,
+                onRefresh = onRefreshDriverTools,
+                onSaveDriverInfo = onSaveDriverInfo,
+                onAddAvailability = onAddAvailability,
+                onBack = { onNavigate(MobileScreen.Home) }
+            )
             else -> MobileHomeScreen(session = session, profile = profile, onNavigate = onNavigate)
         }
     }
@@ -455,6 +518,14 @@ fun MobileHomeScreen(session: MobileSession, profile: MobileProfile?, onNavigate
             )
         }
         if (session.driver != null) {
+            item {
+                HomeActionCard(
+                    icon = Icons.Default.Edit,
+                    title = "Driver profile",
+                    description = "Vehicle, insurance, availability, rides, and reimbursements.",
+                    onClick = { onNavigate(MobileScreen.DriverTools) }
+                )
+            }
             item {
                 HomeActionCard(
                     icon = Icons.Default.DirectionsCar,
@@ -760,6 +831,164 @@ fun LoginScreen(busy: Boolean, error: String?, onLogin: (String, String) -> Unit
                     fontSize = 12.sp,
                     lineHeight = 17.sp
                 )
+            }
+        }
+    }
+}
+
+@Composable
+fun DriverToolsScreen(
+    tools: DriverToolsResponse?,
+    busy: Boolean,
+    error: String?,
+    onRefresh: () -> Unit,
+    onSaveDriverInfo: (DriverInfoUpdatePayload) -> Unit,
+    onAddAvailability: (DriverAvailabilityPayload) -> Unit,
+    onBack: () -> Unit
+) {
+    val driver = tools?.driver
+    var vehicleYear by remember(driver?.vehicleYear) { mutableStateOf(driver?.vehicleYear?.toString().orEmpty()) }
+    var vehicleMake by remember(driver?.vehicleMake) { mutableStateOf(driver?.vehicleMake.orEmpty()) }
+    var vehicleModel by remember(driver?.vehicleModel) { mutableStateOf(driver?.vehicleModel.orEmpty()) }
+    var insuranceDate by remember(driver?.insuranceVerificationDate) { mutableStateOf(driver?.insuranceVerificationDate?.take(10).orEmpty()) }
+    var reimbursementPreference by remember(driver?.reimbursementPreference) { mutableStateOf(driver?.reimbursementPreference.orEmpty()) }
+    var availabilityStart by remember { mutableStateOf("${LocalDate.now().plusDays(1)}T09:00") }
+    var availabilityEnd by remember { mutableStateOf("${LocalDate.now().plusDays(1)}T17:00") }
+    var availabilityStatus by remember { mutableStateOf("AVAILABLE") }
+    var availabilityType by remember { mutableStateOf("one_time") }
+    var maxDistance by remember { mutableStateOf("") }
+    var counties by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 72.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item { BackTitle("Driver profile", "Vehicle, availability, rides, and reimbursements.", onBack) }
+        item {
+            Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Vehicle and insurance", color = CarsColors.Navy, fontSize = 21.sp, fontWeight = FontWeight.Black)
+                            Text(driver?.vehicleLabel ?: "Add vehicle details", color = CarsColors.Muted)
+                        }
+                        OutlinedButton(onClick = onRefresh, enabled = !busy) { Text("Refresh") }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(vehicleYear, { vehicleYear = it }, label = { Text("Year") }, modifier = Modifier.weight(1f))
+                        OutlinedTextField(vehicleMake, { vehicleMake = it }, label = { Text("Make") }, modifier = Modifier.weight(1f))
+                    }
+                    OutlinedTextField(vehicleModel, { vehicleModel = it }, label = { Text("Model") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(insuranceDate, { insuranceDate = it }, label = { Text("Insurance date YYYY-MM-DD") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(reimbursementPreference, { reimbursementPreference = it }, label = { Text("Reimbursement preference") }, modifier = Modifier.fillMaxWidth())
+                    PrimaryButton("Save driver info", busy) {
+                        onSaveDriverInfo(
+                            DriverInfoUpdatePayload(
+                                vehicleYear = vehicleYear.toIntOrNull(),
+                                vehicleMake = vehicleMake.ifBlank { null },
+                                vehicleModel = vehicleModel.ifBlank { null },
+                                insuranceVerificationDate = insuranceDate.ifBlank { null },
+                                reimbursementPreference = reimbursementPreference.ifBlank { null }
+                            )
+                        )
+                    }
+                    if (error != null) ErrorText(error)
+                }
+            }
+        }
+        item {
+            Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Add availability", color = CarsColors.Navy, fontSize = 21.sp, fontWeight = FontWeight.Black)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(availabilityType, { availabilityType = it }, label = { Text("Type") }, modifier = Modifier.weight(1f))
+                        OutlinedTextField(availabilityStatus, { availabilityStatus = it }, label = { Text("Status") }, modifier = Modifier.weight(1f))
+                    }
+                    OutlinedTextField(availabilityStart, { availabilityStart = it }, label = { Text("Starts YYYY-MM-DDTHH:MM") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(availabilityEnd, { availabilityEnd = it }, label = { Text("Ends YYYY-MM-DDTHH:MM") }, modifier = Modifier.fillMaxWidth())
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(counties, { counties = it }, label = { Text("Counties") }, modifier = Modifier.weight(1f))
+                        OutlinedTextField(maxDistance, { maxDistance = it }, label = { Text("Max mi") }, modifier = Modifier.weight(1f))
+                    }
+                    OutlinedTextField(notes, { notes = it }, label = { Text("Notes") }, modifier = Modifier.fillMaxWidth())
+                    PrimaryButton("Add availability", busy) {
+                        onAddAvailability(
+                            DriverAvailabilityPayload(
+                                availabilityType = availabilityType.ifBlank { "one_time" },
+                                status = availabilityStatus.ifBlank { "AVAILABLE" },
+                                startsAt = availabilityStart,
+                                endsAt = availabilityEnd,
+                                preferredCounties = counties.split(",").map { it.trim() }.filter { it.isNotBlank() },
+                                maxDistanceMiles = maxDistance.toIntOrNull(),
+                                notes = notes.ifBlank { null }
+                            )
+                        )
+                    }
+                }
+            }
+        }
+        item { SectionHeader("Availability", driver?.availabilities?.size ?: 0) }
+        if (driver?.availabilities.isNullOrEmpty()) {
+            item { SectionEmpty("No availability has been added yet.") }
+        } else {
+            items(driver!!.availabilities, key = { it.id }) { item ->
+                Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("${item.status.prettyLabel()} · ${item.availabilityType.prettyLabel()}", color = CarsColors.Ink, fontWeight = FontWeight.Black)
+                        Text("${item.startsAt.prettyDateTime()} to ${item.endsAt.prettyDateTime()}", color = CarsColors.Muted)
+                        Text(item.preferredCounties.joinToString(", ").ifBlank { "All counties" }, color = CarsColors.Muted)
+                    }
+                }
+            }
+        }
+        item { SectionHeader("Upcoming accepted rides", tools?.upcomingRides?.size ?: 0) }
+        if (tools?.upcomingRides.isNullOrEmpty()) {
+            item { SectionEmpty("Accepted future rides will appear here.") }
+        } else {
+            items(tools!!.upcomingRides, key = { it.id }) { RideSummaryCard(it) }
+        }
+        item { SectionHeader("Past rides", tools?.pastRides?.size ?: 0) }
+        if (tools?.pastRides.isNullOrEmpty()) {
+            item { SectionEmpty("Completed rides will appear here.") }
+        } else {
+            items(tools!!.pastRides, key = { it.id }) { RideSummaryCard(it) }
+        }
+        item {
+            Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Reimbursement", color = CarsColors.Navy, fontSize = 21.sp, fontWeight = FontWeight.Black)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Metric("Pending", (tools?.reimbursement?.pendingCents ?: 0).formatCents(), Modifier.weight(1f))
+                        Metric("Paid", (tools?.reimbursement?.paidCents ?: 0).formatCents(), Modifier.weight(1f))
+                    }
+                    tools?.reimbursement?.mileageRecords?.take(5)?.forEach {
+                        Text("${it.serviceDate.prettyDate()} · ${it.riderName} · ${it.miles} mi · ${it.amountCents.formatCents()} · ${it.status.prettyLabel()}", color = CarsColors.Ink)
+                    }
+                    if (tools?.reimbursement?.mileageRecords.isNullOrEmpty()) {
+                        Text("Submitted mileage will appear here after completed rides.", color = CarsColors.Muted)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun RideSummaryCard(ride: DriverRideSummary) {
+    Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(ride.riderName, color = CarsColors.Ink, fontWeight = FontWeight.Black, fontSize = 20.sp)
+                    Text("${ride.scheduledPickupAt.prettyDateTime()} · ${ride.purpose.prettyLabel()}", color = CarsColors.Muted)
+                }
+                StatusPill(ride.tripStatus)
+            }
+            Text("${ride.pickupCounty ?: "Pickup"} to ${ride.dropoffCounty ?: "Dropoff"}", color = CarsColors.Muted)
+            ride.mileage?.let {
+                Text("${it.miles} miles · ${it.amountCents.formatCents()} · ${it.status.prettyLabel()}", color = CarsColors.Success, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -1283,3 +1512,21 @@ fun formatTime(value: String): String {
         OffsetDateTime.parse(value).format(DateTimeFormatter.ofPattern("h:mm a"))
     }.getOrDefault(value)
 }
+
+fun String.prettyDateTime(): String {
+    return runCatching {
+        OffsetDateTime.parse(this).format(DateTimeFormatter.ofPattern("MMM d, h:mm a"))
+    }.recoverCatching {
+        LocalDateTime.parse(this).format(DateTimeFormatter.ofPattern("MMM d, h:mm a"))
+    }.getOrDefault(this)
+}
+
+fun String.prettyDate(): String {
+    return runCatching {
+        OffsetDateTime.parse(this).format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
+    }.recoverCatching {
+        LocalDateTime.parse(this).format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
+    }.getOrDefault(take(10))
+}
+
+fun Int.formatCents(): String = "$" + "%.2f".format(this / 100.0)

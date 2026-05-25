@@ -157,3 +157,117 @@ data class LocationPayload(
     val headingDegrees: Double? = null,
     val capturedAt: String
 )
+
+@Serializable
+data class DriverToolsResponse(
+    val driver: DriverToolsProfile,
+    val upcomingRides: List<DriverRideSummary> = emptyList(),
+    val pastRides: List<DriverRideSummary> = emptyList(),
+    val reimbursement: DriverReimbursementSummary
+)
+
+@Serializable
+data class DriverToolsProfile(
+    val id: String,
+    val name: String,
+    val phone: String? = null,
+    val email: String? = null,
+    val status: String,
+    val vehicleMake: String? = null,
+    val vehicleModel: String? = null,
+    val vehicleYear: Int? = null,
+    val vehicleLabel: String? = null,
+    val insuranceVerificationDate: String? = null,
+    val reimbursementPreference: String? = null,
+    val availabilities: List<DriverAvailabilitySummary> = emptyList()
+)
+
+@Serializable
+data class DriverAvailabilitySummary(
+    val id: String,
+    val status: String,
+    val availabilityType: String,
+    val startsAt: String,
+    val endsAt: String,
+    val preferredCounties: List<String> = emptyList(),
+    val maxDistanceMiles: Int? = null,
+    val notes: String? = null
+)
+
+@Serializable
+data class DriverRideSummary(
+    val id: String,
+    val status: String,
+    val tripStatus: String,
+    val scheduledPickupAt: String,
+    val riderName: String,
+    val purpose: String,
+    val pickupAddress: String? = null,
+    val pickupCity: String? = null,
+    val pickupCounty: String? = null,
+    val dropoffAddress: String? = null,
+    val dropoffCity: String? = null,
+    val dropoffCounty: String? = null,
+    val mileage: DriverRideMileage? = null
+)
+
+@Serializable
+data class DriverRideMileage(
+    val miles: String,
+    val amountCents: Int,
+    val status: String
+)
+
+@Serializable
+data class DriverReimbursementSummary(
+    val pendingCents: Int,
+    val paidCents: Int,
+    val mileageRecords: List<DriverMileageSummary> = emptyList(),
+    val batches: List<DriverReimbursementBatchSummary> = emptyList()
+)
+
+@Serializable
+data class DriverMileageSummary(
+    val id: String,
+    val serviceDate: String,
+    val miles: String,
+    val amountCents: Int,
+    val status: String,
+    val riderName: String,
+    val batchNumber: String? = null,
+    val batchStatus: String? = null
+)
+
+@Serializable
+data class DriverReimbursementBatchSummary(
+    val id: String,
+    val batchNumber: String,
+    val status: String,
+    val periodStart: String,
+    val periodEnd: String,
+    val tripCount: Int,
+    val totalMiles: String,
+    val totalCents: Int,
+    val paymentStatus: String,
+    val paidAt: String? = null
+)
+
+@Serializable
+data class DriverInfoUpdatePayload(
+    val vehicleYear: Int? = null,
+    val vehicleMake: String? = null,
+    val vehicleModel: String? = null,
+    val insuranceVerificationDate: String? = null,
+    val reimbursementPreference: String? = null
+)
+
+@Serializable
+data class DriverAvailabilityPayload(
+    val availabilityType: String,
+    val status: String,
+    val startsAt: String,
+    val endsAt: String,
+    val preferredCounties: List<String> = emptyList(),
+    val maxDistanceMiles: Int? = null,
+    val notes: String? = null
+)

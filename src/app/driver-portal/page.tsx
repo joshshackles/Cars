@@ -1,13 +1,16 @@
 import { DriverDashboard } from "@/components/driver-portal/driver-dashboard";
 import { DriverManifest } from "@/components/driver-portal/driver-manifest";
 import { DriverPortalShell } from "@/components/driver-portal/driver-portal-shell";
+import { DriverSelfService } from "@/components/driver-portal/driver-self-service";
 import { Card, CardContent } from "@/components/ui/card";
 import { requireAuthenticatedUser, requirePermission } from "@/lib/auth/guards";
 import {
   getCurrentPortalDriver,
   getDayRange,
   getDriverManifest,
+  getDriverPortalWorkspace,
 } from "@/lib/driver-portal/driver-portal-queries";
+import { getSettingOptions } from "@/lib/settings/settings-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,7 +36,12 @@ export default async function DriverPortalPage() {
   }
 
   const range = getDayRange();
-  const assignments = await getDriverManifest(membership.organizationId, driver.id, range);
+  const [assignments, workspace, counties, reimbursementPreferences] = await Promise.all([
+    getDriverManifest(membership.organizationId, driver.id, range),
+    getDriverPortalWorkspace(membership.organizationId, driver.id),
+    getSettingOptions(membership.organizationId, "countiesServed"),
+    getSettingOptions(membership.organizationId, "reimbursementPreferences"),
+  ]);
   const driverName = `${driver.firstName} ${driver.lastName}`;
 
   return (
@@ -43,6 +51,11 @@ export default async function DriverPortalPage() {
         <div id="manifest">
           <DriverManifest date={range.start} assignments={assignments} />
         </div>
+        <DriverSelfService
+          workspace={workspace}
+          counties={counties}
+          reimbursementPreferences={reimbursementPreferences}
+        />
       </div>
     </DriverPortalShell>
   );

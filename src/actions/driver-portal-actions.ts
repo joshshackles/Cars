@@ -200,6 +200,138 @@ export async function reportIssueAction(assignmentId: string, formData: FormData
   await changePortalTripStatus(context, "NEEDS_ATTENTION", "driver_portal.issue_reported", summary, true);
 }
 
+export async function updateDriverPortalInfoAction(formData: FormData) {
+  const { user, membership, driver } = await getPortalDriverContext();
+  const vehicleYear = parseOptionalInteger(formData.get("vehicleYear"));
+  const vehicleMake = parseOptionalString(formData.get("vehicleMake"));
+  const vehicleModel = parseOptionalString(formData.get("vehicleModel"));
+  const insuranceVerificationDate = parseOptionalDate(formData.get("insuranceVerificationDate"));
+  const reimbursementPreference = parseOptionalString(formData.get("reimbursementPreference"));
+  const vehicleLabel = [vehicleYear, vehicleMake, vehicleModel].filter(Boolean).join(" ");
+
+  await db.driver.update({
+    where: { id: driver.id },
+    data: {
+      vehicleMake,
+      vehicleModel,
+      vehicleYear,
+      insuranceVerificationDate,
+      reimbursementPreference,
+      vehicleLabel: vehicleLabel || null,
+      updatedById: user.id,
+    },
+  });
+
+  await db.auditLog.create({
+    data: {
+      organizationId: membership.organizationId,
+      actorUserId: user.id,
+      action: "driver_portal.profile_updated",
+      entityType: "Driver",
+      entityId: driver.id,
+      driverId: driver.id,
+      metadata: {
+        vehicleLabel: vehicleLabel || null,
+        insuranceVerificationDate: insuranceVerificationDate?.toISOString() ?? null,
+        reimbursementPreference,
+      },
+    },
+  });
+
+  revalidateDriverPortal();
+}
+
+export async function createDriverPortalAvailabilityAction(formData: FormData) {
+  const { user, membership, driver } = await getPortalDriverContext();
+  const startsAt = parseRequiredDate(formData.get("startsAt"), "Start date/time");
+  const endsAt = parseRequiredDate(formData.get("endsAt"), "End date/time");
+
+  if (endsAt <= startsAt) {
+    throw new Error("Availability end must be after the start.");
+  }
+
+  const status = parseAvailabilityStatus(formData.get("status"));
+  const availabilityType = parseAvailabilityType(formData.get("availabilityType"));
+  const preferredCounties = formData.getAll("preferredCounties").map(String).filter(Boolean);
+  const maxDistanceMiles = parseOptionalInteger(formData.get("maxDistanceMiles"));
+  const notes = parseOptionalString(formData.get("notes"));
+
+  await db.driverAvailability.create({
+    data: {
+      organizationId: membership.organizationId,
+      driverId: driver.id,
+      status,
+      availabilityType,
+      startsAt,
+      endsAt,
+      preferredCounties,
+      maxDistanceMiles,
+      notes,
+      createdById: user.id,
+      updatedById: user.id,
+    },
+  });
+
+  await db.auditLog.create({
+    data: {
+      organizationId: membership.organizationId,
+      actorUserId: user.id,
+      action: "driver_portal.availability_created",
+      entityType: "Driver",
+      entityId: driver.id,
+      driverId: driver.id,
+      metadata: {
+        status,
+        availabilityType,
+        startsAt: startsAt.toISOString(),
+        endsAt: endsAt.toISOString(),
+        preferredCounties,
+        maxDistanceMiles,
+      },
+    },
+  });
+
+  revalidateDriverPortal();
+}
+
+export async function removeDriverPortalAvailabilityAction(availabilityId: string) {
+  const { user, membership, driver } = await getPortalDriverContext();
+  const availability = await db.driverAvailability.findFirstOrThrow({
+    where: {
+      id: availabilityId,
+      organizationId: membership.organizationId,
+      driverId: driver.id,
+      deletedAt: null,
+    },
+  });
+
+  await db.driverAvailability.update({
+    where: { id: availability.id },
+    data: {
+      deletedAt: new Date(),
+      deletedById: user.id,
+      updatedById: user.id,
+    },
+  });
+
+  await db.auditLog.create({
+    data: {
+      organizationId: membership.organizationId,
+      actorUserId: user.id,
+      action: "driver_portal.availability_removed",
+      entityType: "DriverAvailability",
+      entityId: availability.id,
+      driverId: driver.id,
+      metadata: {
+        startsAt: availability.startsAt.toISOString(),
+        endsAt: availability.endsAt.toISOString(),
+      },
+    },
+  });
+
+  revalidateDriverPortal();
+}
+
 async function getPortalAssignment(assignmentId: string) {
   const user = await requireAuthenticatedUser();
   const membership = await requirePermission("driver_portal:update");
@@ -327,6 +459,18 @@ async function ensureMileageRecord(
     gpsAccuracySummary: gpsSummary,
     gpsTrack: gpsPayload,
   });
+}
+
+async function getPortalDriverContext() {
+  const user = await requireAuthenticatedUser();
+  const membership = await requirePermission("driver_portal:update");
+  const driver = await getCurrentPortalDriver(membership.organizationId, user);
+
+  if (!driver) {
+    throw new Error("No driver profile is linked to this user.");
+  }
+
+  return { user, membership, driver };
 }
 
 function assertAssignmentOpen(context: PortalAssignmentContext) {
@@ -471,6 +615,70 @@ function parseRouteUrl(value: FormDataEntryValue | null) {
   } catch {
     return null;
   }
+}
+
+function parseOptionalString(value: FormDataEntryValue | null) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function parseOptionalInteger(value: FormDataEntryValue | null) {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return null;
+  }
+
+  const number = Number(value);
+  if (!Number.isInteger(number)) {
+    throw new Error("Enter a whole number.");
+  }
+
+  return number;
+}
+
+function parseOptionalDate(value: FormDataEntryValue | null) {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return null;
+  }
+
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error("Enter a valid date.");
+  }
+
+  return date;
+}
+
+function parseRequiredDate(value: FormDataEntryValue | null, label: string) {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`${label} is required.`);
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`${label} must be a valid date.`);
+  }
+
+  return date;
+}
+
+function parseAvailabilityStatus(value: FormDataEntryValue | null) {
+  if (value === "AVAILABLE" || value === "UNAVAILABLE" || value === "TENTATIVE") {
+    return value;
+  }
+
+  return "AVAILABLE";
+}
+
+function parseAvailabilityType(value: FormDataEntryValue | null) {
+  if (value === "one_time" || value === "recurring" || value === "blackout") {
+    return value;
+  }
+
+  return "one_time";
 }
 
 function normalizeGpsTrackPoint(value: unknown): GpsTrackPoint | null {
