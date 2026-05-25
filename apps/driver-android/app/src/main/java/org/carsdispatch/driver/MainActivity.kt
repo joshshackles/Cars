@@ -488,6 +488,14 @@ fun MobileHeader(session: MobileSession, profile: MobileProfile?, onLogout: () -
 
 @Composable
 fun MobileHomeScreen(session: MobileSession, profile: MobileProfile?, onNavigate: (MobileScreen) -> Unit) {
+    val context = LocalContext.current
+    val rider = profile?.rider
+    val missingProfileItems = listOfNotNull(
+        "phone".takeIf { rider?.phone.isNullOrBlank() },
+        "pickup address".takeIf { rider?.addressLine1.isNullOrBlank() },
+        "county".takeIf { rider?.county.isNullOrBlank() }
+    )
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 72.dp),
@@ -504,10 +512,23 @@ fun MobileHomeScreen(session: MobileSession, profile: MobileProfile?, onNavigate
                     )
                     Text(
                         if (session.driver != null) "Start with your manifest, then use the cabinet for vehicle info, availability, mileage, and reimbursements."
-                        else "Request a ride, keep your contact details current, or open your driver dashboard.",
+                        else "Request a ride, keep your contact details current, or call CARS when a request needs extra attention.",
                         color = CarsColors.Muted,
                         lineHeight = 21.sp
                     )
+                }
+            }
+        }
+        if (session.driver == null && missingProfileItems.isNotEmpty()) {
+            item {
+                Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = CarsColors.Warm)) {
+                    Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Finish your rider profile", color = CarsColors.Navy, fontSize = 21.sp, fontWeight = FontWeight.Black)
+                        Text("Missing ${missingProfileItems.joinToString(", ")}. Dispatch can schedule faster when these details are ready.", color = CarsColors.Muted)
+                        OutlinedButton(onClick = { onNavigate(MobileScreen.Profile) }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Update profile", color = CarsColors.Navy, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
         }
@@ -551,6 +572,14 @@ fun MobileHomeScreen(session: MobileSession, profile: MobileProfile?, onNavigate
                     Text("Need immediate help?", color = CarsColors.Red, fontWeight = FontWeight.Black, fontSize = 21.sp)
                     Text("Call CARS at 417-438-2925.", color = CarsColors.Navy, fontWeight = FontWeight.Black)
                     Text("Role: ${session.role.prettyRoleLabel()}", color = CarsColors.Muted)
+                    OutlinedButton(
+                        onClick = { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:4174382925"))) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Call, contentDescription = null, tint = CarsColors.Navy)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Call CARS", color = CarsColors.Navy, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -593,6 +622,13 @@ fun ProfileForm(
     var postalCode by remember(rider?.postalCode) { mutableStateOf(rider?.postalCode.orEmpty()) }
     var preference by remember(rider?.communicationPreference) { mutableStateOf(rider?.communicationPreference.orEmpty()) }
     var pickupNotes by remember(rider?.pickupInstructions) { mutableStateOf(rider?.pickupInstructions.orEmpty()) }
+    val completionItems = listOf(
+        "Phone" to phone.isNotBlank(),
+        "Address" to address.isNotBlank(),
+        "County" to county.isNotBlank(),
+        "Pickup notes" to pickupNotes.isNotBlank()
+    )
+    val completionCount = completionItems.count { it.second }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -600,6 +636,24 @@ fun ProfileForm(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item { BackTitle("My information", "Keep contact and pickup details current.", onBack) }
+        item {
+            Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Profile readiness", color = CarsColors.Navy, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                    Text("$completionCount of ${completionItems.size} key details ready", color = CarsColors.Muted)
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        completionItems.chunked(2).forEach { rowItems ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                rowItems.forEach { (label, ready) ->
+                                    ReadinessPill(label, ready, Modifier.weight(1f))
+                                }
+                                if (rowItems.size == 1) Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+            }
+        }
         item {
             Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -610,11 +664,24 @@ fun ProfileForm(
                         OutlinedTextField(city, { city = it }, label = { Text("City") }, modifier = Modifier.weight(1f))
                         OutlinedTextField(county, { county = it }, label = { Text("County") }, modifier = Modifier.weight(1f))
                     }
+                    Text("Served counties", color = CarsColors.Muted, fontWeight = FontWeight.Bold)
+                    CarsServedCounties.chunked(2).forEach { rowCounties ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            rowCounties.forEach { countyOption ->
+                                PresetButton(countyOption, Modifier.weight(1f)) { county = countyOption }
+                            }
+                        }
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(state, { state = it }, label = { Text("State") }, modifier = Modifier.weight(1f))
                         OutlinedTextField(postalCode, { postalCode = it }, label = { Text("ZIP") }, modifier = Modifier.weight(1f))
                     }
                     OutlinedTextField(preference, { preference = it }, label = { Text("Communication preference") }, modifier = Modifier.fillMaxWidth())
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        PresetButton("Call", Modifier.weight(1f)) { preference = "phone" }
+                        PresetButton("Text", Modifier.weight(1f)) { preference = "text" }
+                        PresetButton("Email", Modifier.weight(1f)) { preference = "email" }
+                    }
                     OutlinedTextField(pickupNotes, { pickupNotes = it }, label = { Text("Pickup instructions") }, modifier = Modifier.fillMaxWidth())
                     PrimaryButton("Save information", busy) {
                         onSave(ProfileUpdatePayload(name, phone, address, city, county, state, postalCode, preference, pickupNotes))
@@ -649,6 +716,11 @@ fun RideRequestForm(
     var time by remember { mutableStateOf("09:00") }
     var purpose by remember { mutableStateOf("medical") }
     var instructions by remember { mutableStateOf("") }
+    val missingProfileItems = listOfNotNull(
+        "phone".takeIf { rider?.phone.isNullOrBlank() },
+        "pickup address".takeIf { rider?.addressLine1.isNullOrBlank() },
+        "county".takeIf { rider?.county.isNullOrBlank() }
+    )
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -656,36 +728,79 @@ fun RideRequestForm(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item { BackTitle("Request a ride", "Dispatch will review and schedule your trip.", onBack) }
+        if (missingProfileItems.isNotEmpty()) {
+            item {
+                Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = CarsColors.Warm)) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Profile details missing", color = CarsColors.Red, fontSize = 19.sp, fontWeight = FontWeight.Black)
+                        Text("Missing ${missingProfileItems.joinToString(", ")}. You can still request a ride, but dispatch may need to call for details.", color = CarsColors.Muted)
+                    }
+                }
+            }
+        }
         item {
             Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Pickup", color = CarsColors.Navy, fontWeight = FontWeight.Black, fontSize = 20.sp)
+                    FormSectionTitle("1", "Pickup")
                     OutlinedTextField(pickupAddress, { pickupAddress = it }, label = { Text("Pickup address") }, modifier = Modifier.fillMaxWidth())
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(pickupCity, { pickupCity = it }, label = { Text("City") }, modifier = Modifier.weight(1f))
                         OutlinedTextField(pickupCounty, { pickupCounty = it }, label = { Text("County") }, modifier = Modifier.weight(1f))
                     }
+                    CarsServedCounties.chunked(2).forEach { rowCounties ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            rowCounties.forEach { countyOption ->
+                                PresetButton(countyOption, Modifier.weight(1f)) { pickupCounty = countyOption }
+                            }
+                        }
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(pickupState, { pickupState = it }, label = { Text("State") }, modifier = Modifier.weight(1f))
                         OutlinedTextField(pickupZip, { pickupZip = it }, label = { Text("ZIP") }, modifier = Modifier.weight(1f))
                     }
-                    Text("Dropoff", color = CarsColors.Navy, fontWeight = FontWeight.Black, fontSize = 20.sp)
+                    FormSectionTitle("2", "Destination")
                     OutlinedTextField(dropoffAddress, { dropoffAddress = it }, label = { Text("Dropoff address") }, modifier = Modifier.fillMaxWidth())
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(dropoffCity, { dropoffCity = it }, label = { Text("City") }, modifier = Modifier.weight(1f))
                         OutlinedTextField(dropoffCounty, { dropoffCounty = it }, label = { Text("County") }, modifier = Modifier.weight(1f))
                     }
+                    CarsServedCounties.chunked(2).forEach { rowCounties ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            rowCounties.forEach { countyOption ->
+                                PresetButton(countyOption, Modifier.weight(1f)) { dropoffCounty = countyOption }
+                            }
+                        }
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(dropoffState, { dropoffState = it }, label = { Text("State") }, modifier = Modifier.weight(1f))
                         OutlinedTextField(dropoffZip, { dropoffZip = it }, label = { Text("ZIP") }, modifier = Modifier.weight(1f))
                     }
-                    Text("Appointment", color = CarsColors.Navy, fontWeight = FontWeight.Black, fontSize = 20.sp)
+                    FormSectionTitle("3", "Appointment")
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(date, { date = it }, label = { Text("Date YYYY-MM-DD") }, modifier = Modifier.weight(1f))
                         OutlinedTextField(time, { time = it }, label = { Text("Time HH:MM") }, modifier = Modifier.weight(1f))
                     }
-                    OutlinedTextField(purpose, { purpose = it }, label = { Text("Purpose code") }, modifier = Modifier.fillMaxWidth())
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        PresetButton("Tomorrow", Modifier.weight(1f)) { date = LocalDate.now().plusDays(1).toString() }
+                        PresetButton("+2 days", Modifier.weight(1f)) { date = LocalDate.now().plusDays(2).toString() }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        PresetButton("Morning", Modifier.weight(1f)) { time = "09:00" }
+                        PresetButton("Midday", Modifier.weight(1f)) { time = "12:00" }
+                        PresetButton("Afternoon", Modifier.weight(1f)) { time = "15:00" }
+                    }
+                    FormSectionTitle("4", "Purpose and notes")
+                    OutlinedTextField(purpose, { purpose = it }, label = { Text("Purpose") }, modifier = Modifier.fillMaxWidth())
+                    RidePurposePresets { purpose = it }
                     OutlinedTextField(instructions, { instructions = it }, label = { Text("Special instructions") }, modifier = Modifier.fillMaxWidth())
+                    Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = CarsColors.Warm)) {
+                        Text(
+                            "For return trips, multiple stops, same-day rides, or urgent changes, call CARS after submitting.",
+                            color = CarsColors.Muted,
+                            modifier = Modifier.padding(12.dp),
+                            lineHeight = 20.sp
+                        )
+                    }
                     PrimaryButton("Send ride request", busy) {
                         val appointment = runCatching { LocalDateTime.parse("${date}T$time").toString() + ":00.000Z" }
                             .getOrDefault("${date}T${time}:00.000Z")
@@ -1138,6 +1253,64 @@ fun CabinetHeader(
         }
     }
 }
+
+@Composable
+fun ReadinessPill(label: String, ready: Boolean, modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .background(if (ready) Color(0xFFE7F8EF) else Color(0xFFFFF3D8), RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Default.CheckCircle,
+            contentDescription = null,
+            tint = if (ready) CarsColors.Success else CarsColors.Muted,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            "$label ${if (ready) "ready" else "missing"}",
+            color = CarsColors.Ink,
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+fun FormSectionTitle(number: String, title: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            number,
+            color = Color.White,
+            fontWeight = FontWeight.Black,
+            modifier = Modifier
+                .background(CarsColors.Navy, RoundedCornerShape(999.dp))
+                .padding(horizontal = 10.dp, vertical = 5.dp)
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(title, color = CarsColors.Navy, fontWeight = FontWeight.Black, fontSize = 20.sp)
+    }
+}
+
+@Composable
+fun RidePurposePresets(onSelect: (String) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            PresetButton("Medical", Modifier.weight(1f)) { onSelect("medical") }
+            PresetButton("Grocery", Modifier.weight(1f)) { onSelect("grocery") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            PresetButton("Employment", Modifier.weight(1f)) { onSelect("employment") }
+            PresetButton("Social", Modifier.weight(1f)) { onSelect("social_services") }
+        }
+    }
+}
+
+val CarsServedCounties = listOf("Barton", "Jasper", "Newton", "McDonald")
 
 @Composable
 fun PresetButton(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
@@ -1637,6 +1810,7 @@ object CarsColors {
     val Navy = Color(0xFF003A78)
     val Red = Color(0xFFE30613)
     val Soft = Color(0xFFF3F7FB)
+    val Warm = Color(0xFFFFF7ED)
     val Ink = Color(0xFF0B1224)
     val Muted = Color(0xFF526179)
     val PaleBlue = Color(0xFFDCEBFF)
