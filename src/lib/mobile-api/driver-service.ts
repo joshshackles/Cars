@@ -31,6 +31,18 @@ const allowedPortalTransitions: Record<string, PortalTripStatus[]> = {
 };
 
 export async function getMobileProfile(context: MobileUserContext) {
+  const rider = await db.rider.findFirst({
+    where: {
+      organizationId: context.membership.organizationId,
+      deletedAt: null,
+      OR: [
+        { email: context.user.email },
+        ...(context.driver?.phone ? [{ phone: context.driver.phone }] : []),
+      ],
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+
   return {
     user: context.user,
     organization: {
@@ -47,6 +59,23 @@ export async function getMobileProfile(context: MobileUserContext) {
           status: context.driver.status,
           phone: context.driver.phone,
           email: context.driver.email,
+        }
+      : null,
+    rider: rider
+      ? {
+          id: rider.id,
+          displayName: rider.displayName,
+          firstName: rider.firstName,
+          lastName: rider.lastName,
+          phone: rider.phone,
+          email: rider.email,
+          addressLine1: rider.addressLine1,
+          city: rider.city,
+          county: rider.county,
+          state: rider.state,
+          postalCode: rider.postalCode,
+          communicationPreference: rider.communicationPreference,
+          pickupInstructions: rider.pickupInstructions,
         }
       : null,
   };

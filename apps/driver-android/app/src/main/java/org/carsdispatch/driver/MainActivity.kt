@@ -35,8 +35,13 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Navigation
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ReportProblem
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -73,12 +78,16 @@ import kotlinx.coroutines.launch
 import org.carsdispatch.driver.data.CarsApi
 import org.carsdispatch.driver.data.ManifestAssignment
 import org.carsdispatch.driver.data.ManifestResponse
+import org.carsdispatch.driver.data.MobileProfile
+import org.carsdispatch.driver.data.ProfileUpdatePayload
+import org.carsdispatch.driver.data.RideRequestPayload
 import org.carsdispatch.driver.data.MobileSession
 import org.carsdispatch.driver.data.SessionStore
 import org.carsdispatch.driver.location.DriverLocationClient
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 
@@ -95,9 +104,11 @@ fun CarsDriverApp() {
     val scope = rememberCoroutineScope()
     val sessionStore = remember { SessionStore(context) }
     var session by remember { mutableStateOf<MobileSession?>(null) }
+    var profile by remember { mutableStateOf<MobileProfile?>(null) }
     var manifest by remember { mutableStateOf<ManifestResponse?>(null) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var screen by remember { mutableStateOf(MobileScreen.PublicHome) }
     var activeTracking by remember { mutableStateOf<TrackingState?>(null) }
     var trackingJob by remember { mutableStateOf<Job?>(null) }
     val api = remember(session?.token) { CarsApi { session?.token } }
@@ -126,6 +137,7 @@ fun CarsDriverApp() {
         val stored = sessionStore.load()
         session = stored
         if (stored != null) {
+            screen = MobileScreen.Home
             busy = true
             runCatching { CarsApi { stored.token }.manifest(LocalDate.now().toString()) }
                 .onSuccess { manifest = it }
@@ -133,19 +145,26 @@ fun CarsDriverApp() {
                     if (isInvalidSession(it)) {
                         sessionStore.clear()
                         session = null
+                        profile = null
                         manifest = null
+                        screen = MobileScreen.Login
                         error = "Please sign in again for this CARS Dispatch deployment."
                     } else {
                         error = it.message
                     }
                 }
+            runCatching { CarsApi { stored.token }.profile() }
+                .onSuccess { profile = it }
             busy = false
         }
     }
 
     CarsTheme {
         Surface(color = CarsColors.Soft, modifier = Modifier.fillMaxSize()) {
-            if (session == null) {
+            val currentSession = session
+            if (currentSession == null && screen == MobileScreen.PublicHome) {
+                PublicHomeScreen(onLogin = { screen = MobileScreen.Login })
+            } else if (currentSession == null) {
                 LoginScreen(
                     busy = busy,
                     error = error,
@@ -155,14 +174,17 @@ fun CarsDriverApp() {
                             error = null
                             runCatching {
                                 val nextSession = CarsApi { null }.login(email, accessCode, "Android")
+                                val nextApi = CarsApi { nextSession.token }
                                 val nextManifest = if (nextSession.driver != null) {
-                                    CarsApi { nextSession.token }.manifest(LocalDate.now().toString())
+                                    nextApi.manifest(LocalDate.now().toString())
                                 } else {
                                     null
                                 }
                                 sessionStore.save(nextSession)
                                 session = nextSession
+                                profile = nextApi.profile()
                                 manifest = nextManifest
+                                screen = MobileScreen.Home
                             }.onFailure {
                                 error = it.message
                             }
@@ -170,35 +192,25 @@ fun CarsDriverApp() {
                         }
                     }
                 )
-            } else if (session!!.driver == null) {
-                StaffMobileHome(
-                    session = session!!,
-                    onLogout = {
-                        scope.launch {
-                            runCatching { api.logout() }
-                            sessionStore.clear()
-                            session = null
-                            manifest = null
-                            activeTracking = null
-                        }
-                    }
-                )
-            } else {
+            } else if (screen == MobileScreen.DriverDashboard && currentSession.driver != null) {
                 DriverDashboard(
-                    session = session!!,
+                    session = currentSession,
                     manifest = manifest,
                     busy = busy,
                     error = error,
                     activeTracking = activeTracking,
                     onRefresh = ::refreshManifest,
+                    onBackHome = { screen = MobileScreen.Home },
                     onLogout = {
                         scope.launch {
                             runCatching { api.logout() }
                             trackingJob?.cancel()
                             sessionStore.clear()
                             session = null
+                            profile = null
                             manifest = null
                             activeTracking = null
+                            screen = MobileScreen.PublicHome
                         }
                     },
                     onAction = { _, action ->
@@ -251,6 +263,47 @@ fun CarsDriverApp() {
                         }
                     }
                 )
+            } else {
+                MobileHomeScaffold(
+                    session = currentSession,
+                    profile = profile,
+                    screen = screen,
+                    busy = busy,
+                    error = error,
+                    onNavigate = { screen = it },
+                    onLogout = {
+                        scope.launch {
+                            runCatching { api.logout() }
+                            trackingJob?.cancel()
+                            sessionStore.clear()
+                            session = null
+                            profile = null
+                            manifest = null
+                            activeTracking = null
+                            screen = MobileScreen.PublicHome
+                        }
+                    },
+                    onSaveProfile = { payload ->
+                        scope.launch {
+                            busy = true
+                            error = null
+                            runCatching { profile = api.updateProfile(payload) }
+                                .onFailure { error = it.message }
+                            busy = false
+                        }
+                    },
+                    onRequestRide = { payload ->
+                        scope.launch {
+                            busy = true
+                            error = null
+                            runCatching {
+                                api.requestRide(payload)
+                                screen = MobileScreen.Home
+                            }.onFailure { error = it.message }
+                            busy = false
+                        }
+                    }
+                )
             }
         }
     }
@@ -258,9 +311,341 @@ fun CarsDriverApp() {
 
 data class TrackingState(val assignmentId: String, val points: Int)
 
+enum class MobileScreen {
+    PublicHome,
+    Login,
+    Home,
+    Profile,
+    RideRequest,
+    DriverDashboard
+}
+
 fun hasLocationPermission(context: Context): Boolean {
     return ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+}
+
+@Composable
+fun PublicHomeScreen(onLogin: () -> Unit) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(CarsColors.Navy)
+            .safeDrawingPadding(),
+        contentPadding = PaddingValues(24.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        item {
+            Image(
+                painter = painterResource(R.drawable.cars_logo),
+                contentDescription = "CARS",
+                modifier = Modifier.size(132.dp)
+            )
+        }
+        item {
+            Text("CARS Mobile", color = Color.White, fontSize = 36.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center)
+            Text("Community Action Ride System", color = CarsColors.PaleBlue, fontSize = 18.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+        }
+        item {
+            Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Ride help, driver tools, and trip updates", color = CarsColors.Navy, fontSize = 23.sp, fontWeight = FontWeight.Black)
+                    Text(
+                        "Sign in to update your contact information, request a ride, or open driver trip tools.",
+                        color = CarsColors.Muted,
+                        lineHeight = 22.sp
+                    )
+                    PrimaryButton("Sign in", false, onLogin)
+                }
+            }
+        }
+        item {
+            Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Need a ride now?", color = CarsColors.Red, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                    Text("Call CARS: 417-438-2925", color = CarsColors.Navy, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                    Text("Serving Barton, Jasper, Newton, and McDonald Counties.", color = CarsColors.Muted)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MobileHomeScaffold(
+    session: MobileSession,
+    profile: MobileProfile?,
+    screen: MobileScreen,
+    busy: Boolean,
+    error: String?,
+    onNavigate: (MobileScreen) -> Unit,
+    onLogout: () -> Unit,
+    onSaveProfile: (ProfileUpdatePayload) -> Unit,
+    onRequestRide: (RideRequestPayload) -> Unit
+) {
+    Column(Modifier.fillMaxSize()) {
+        MobileHeader(session = session, profile = profile, onLogout = onLogout)
+        when (screen) {
+            MobileScreen.Profile -> ProfileForm(profile = profile, session = session, busy = busy, error = error, onSave = onSaveProfile, onBack = { onNavigate(MobileScreen.Home) })
+            MobileScreen.RideRequest -> RideRequestForm(profile = profile, busy = busy, error = error, onSubmit = onRequestRide, onBack = { onNavigate(MobileScreen.Home) })
+            else -> MobileHomeScreen(session = session, profile = profile, onNavigate = onNavigate)
+        }
+    }
+}
+
+@Composable
+fun MobileHeader(session: MobileSession, profile: MobileProfile?, onLogout: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(CarsColors.Navy)
+            .safeDrawingPadding()
+            .padding(18.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Image(
+            painter = painterResource(R.drawable.cars_logo),
+            contentDescription = "CARS",
+            modifier = Modifier.size(54.dp)
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text("CARS Mobile", color = CarsColors.PaleBlue, fontWeight = FontWeight.Bold)
+            Text(profile?.user?.name ?: session.user.name, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(session.organization.name, color = CarsColors.PaleBlue, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        TextButton(onClick = onLogout) {
+            Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, tint = Color.White)
+            Spacer(Modifier.width(6.dp))
+            Text("Sign out", color = Color.White)
+        }
+    }
+}
+
+@Composable
+fun MobileHomeScreen(session: MobileSession, profile: MobileProfile?, onNavigate: (MobileScreen) -> Unit) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 72.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("How can we help today?", color = CarsColors.Navy, fontSize = 25.sp, fontWeight = FontWeight.Black)
+                    Text("Request a ride, keep your contact details current, or open your driver dashboard.", color = CarsColors.Muted, lineHeight = 21.sp)
+                }
+            }
+        }
+        item {
+            HomeActionCard(
+                icon = Icons.Default.Event,
+                title = "Request a ride",
+                description = "Send a transportation request to the CARS dispatch team.",
+                onClick = { onNavigate(MobileScreen.RideRequest) }
+            )
+        }
+        item {
+            HomeActionCard(
+                icon = Icons.Default.Person,
+                title = "Update my information",
+                description = profile?.rider?.phone ?: "Add phone, address, pickup notes, and preferences.",
+                onClick = { onNavigate(MobileScreen.Profile) }
+            )
+        }
+        if (session.driver != null) {
+            item {
+                HomeActionCard(
+                    icon = Icons.Default.DirectionsCar,
+                    title = "Driver dashboard",
+                    description = "Open assigned rides, route tools, GPS mileage, and trip status.",
+                    onClick = { onNavigate(MobileScreen.DriverDashboard) }
+                )
+            }
+        }
+        item {
+            Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Need immediate help?", color = CarsColors.Red, fontWeight = FontWeight.Black, fontSize = 21.sp)
+                    Text("Call CARS at 417-438-2925.", color = CarsColors.Navy, fontWeight = FontWeight.Black)
+                    Text("Role: ${session.role.prettyRoleLabel()}", color = CarsColors.Muted)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun HomeActionCard(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, description: String, onClick: () -> Unit) {
+    Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, tint = CarsColors.Navy, modifier = Modifier.size(34.dp))
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, color = CarsColors.Ink, fontSize = 21.sp, fontWeight = FontWeight.Black)
+                Text(description, color = CarsColors.Muted, lineHeight = 20.sp)
+            }
+            Button(onClick = onClick, colors = ButtonDefaults.buttonColors(containerColor = CarsColors.Navy)) {
+                Text("Open")
+            }
+        }
+    }
+}
+
+@Composable
+fun ProfileForm(
+    profile: MobileProfile?,
+    session: MobileSession,
+    busy: Boolean,
+    error: String?,
+    onSave: (ProfileUpdatePayload) -> Unit,
+    onBack: () -> Unit
+) {
+    val rider = profile?.rider
+    var name by remember(profile?.user?.name) { mutableStateOf(profile?.user?.name ?: session.user.name) }
+    var phone by remember(rider?.phone) { mutableStateOf(rider?.phone.orEmpty()) }
+    var address by remember(rider?.addressLine1) { mutableStateOf(rider?.addressLine1.orEmpty()) }
+    var city by remember(rider?.city) { mutableStateOf(rider?.city.orEmpty()) }
+    var county by remember(rider?.county) { mutableStateOf(rider?.county.orEmpty()) }
+    var state by remember(rider?.state) { mutableStateOf(rider?.state ?: "MO") }
+    var postalCode by remember(rider?.postalCode) { mutableStateOf(rider?.postalCode.orEmpty()) }
+    var preference by remember(rider?.communicationPreference) { mutableStateOf(rider?.communicationPreference.orEmpty()) }
+    var pickupNotes by remember(rider?.pickupInstructions) { mutableStateOf(rider?.pickupInstructions.orEmpty()) }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 72.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item { BackTitle("My information", "Keep contact and pickup details current.", onBack) }
+        item {
+            Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(name, { name = it }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(phone, { phone = it }, label = { Text("Phone") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(address, { address = it }, label = { Text("Address") }, modifier = Modifier.fillMaxWidth())
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(city, { city = it }, label = { Text("City") }, modifier = Modifier.weight(1f))
+                        OutlinedTextField(county, { county = it }, label = { Text("County") }, modifier = Modifier.weight(1f))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(state, { state = it }, label = { Text("State") }, modifier = Modifier.weight(1f))
+                        OutlinedTextField(postalCode, { postalCode = it }, label = { Text("ZIP") }, modifier = Modifier.weight(1f))
+                    }
+                    OutlinedTextField(preference, { preference = it }, label = { Text("Communication preference") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(pickupNotes, { pickupNotes = it }, label = { Text("Pickup instructions") }, modifier = Modifier.fillMaxWidth())
+                    PrimaryButton("Save information", busy) {
+                        onSave(ProfileUpdatePayload(name, phone, address, city, county, state, postalCode, preference, pickupNotes))
+                    }
+                    if (error != null) ErrorText(error)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun RideRequestForm(
+    profile: MobileProfile?,
+    busy: Boolean,
+    error: String?,
+    onSubmit: (RideRequestPayload) -> Unit,
+    onBack: () -> Unit
+) {
+    val rider = profile?.rider
+    var pickupAddress by remember(rider?.addressLine1) { mutableStateOf(rider?.addressLine1.orEmpty()) }
+    var pickupCity by remember(rider?.city) { mutableStateOf(rider?.city.orEmpty()) }
+    var pickupCounty by remember(rider?.county) { mutableStateOf(rider?.county.orEmpty()) }
+    var pickupState by remember(rider?.state) { mutableStateOf(rider?.state ?: "MO") }
+    var pickupZip by remember(rider?.postalCode) { mutableStateOf(rider?.postalCode.orEmpty()) }
+    var dropoffAddress by remember { mutableStateOf("") }
+    var dropoffCity by remember { mutableStateOf("") }
+    var dropoffCounty by remember { mutableStateOf("") }
+    var dropoffState by remember { mutableStateOf("MO") }
+    var dropoffZip by remember { mutableStateOf("") }
+    var date by remember { mutableStateOf(LocalDate.now().plusDays(2).toString()) }
+    var time by remember { mutableStateOf("09:00") }
+    var purpose by remember { mutableStateOf("medical") }
+    var instructions by remember { mutableStateOf("") }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 72.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item { BackTitle("Request a ride", "Dispatch will review and schedule your trip.", onBack) }
+        item {
+            Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Pickup", color = CarsColors.Navy, fontWeight = FontWeight.Black, fontSize = 20.sp)
+                    OutlinedTextField(pickupAddress, { pickupAddress = it }, label = { Text("Pickup address") }, modifier = Modifier.fillMaxWidth())
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(pickupCity, { pickupCity = it }, label = { Text("City") }, modifier = Modifier.weight(1f))
+                        OutlinedTextField(pickupCounty, { pickupCounty = it }, label = { Text("County") }, modifier = Modifier.weight(1f))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(pickupState, { pickupState = it }, label = { Text("State") }, modifier = Modifier.weight(1f))
+                        OutlinedTextField(pickupZip, { pickupZip = it }, label = { Text("ZIP") }, modifier = Modifier.weight(1f))
+                    }
+                    Text("Dropoff", color = CarsColors.Navy, fontWeight = FontWeight.Black, fontSize = 20.sp)
+                    OutlinedTextField(dropoffAddress, { dropoffAddress = it }, label = { Text("Dropoff address") }, modifier = Modifier.fillMaxWidth())
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(dropoffCity, { dropoffCity = it }, label = { Text("City") }, modifier = Modifier.weight(1f))
+                        OutlinedTextField(dropoffCounty, { dropoffCounty = it }, label = { Text("County") }, modifier = Modifier.weight(1f))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(dropoffState, { dropoffState = it }, label = { Text("State") }, modifier = Modifier.weight(1f))
+                        OutlinedTextField(dropoffZip, { dropoffZip = it }, label = { Text("ZIP") }, modifier = Modifier.weight(1f))
+                    }
+                    Text("Appointment", color = CarsColors.Navy, fontWeight = FontWeight.Black, fontSize = 20.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(date, { date = it }, label = { Text("Date YYYY-MM-DD") }, modifier = Modifier.weight(1f))
+                        OutlinedTextField(time, { time = it }, label = { Text("Time HH:MM") }, modifier = Modifier.weight(1f))
+                    }
+                    OutlinedTextField(purpose, { purpose = it }, label = { Text("Purpose code") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(instructions, { instructions = it }, label = { Text("Special instructions") }, modifier = Modifier.fillMaxWidth())
+                    PrimaryButton("Send ride request", busy) {
+                        val appointment = runCatching { LocalDateTime.parse("${date}T$time").toString() + ":00.000Z" }
+                            .getOrDefault("${date}T${time}:00.000Z")
+                        onSubmit(
+                            RideRequestPayload(
+                                pickupAddress,
+                                pickupCity,
+                                pickupCounty,
+                                pickupState,
+                                pickupZip,
+                                dropoffAddress,
+                                dropoffCity,
+                                dropoffCounty,
+                                dropoffState,
+                                dropoffZip,
+                                appointment,
+                                purpose,
+                                instructions
+                            )
+                        )
+                    }
+                    if (error != null) ErrorText(error)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BackTitle(title: String, subtitle: String, onBack: () -> Unit) {
+    Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(title, color = CarsColors.Navy, fontSize = 24.sp, fontWeight = FontWeight.Black)
+                Text(subtitle, color = CarsColors.Muted)
+            }
+            OutlinedButton(onClick = onBack) {
+                Text("Back")
+            }
+        }
+    }
 }
 
 @Composable
@@ -388,6 +773,7 @@ fun DriverDashboard(
     error: String?,
     activeTracking: TrackingState?,
     onRefresh: () -> Unit,
+    onBackHome: () -> Unit,
     onLogout: () -> Unit,
     onAction: (String, suspend (CarsApi) -> Unit) -> Unit,
     onStartTracking: (ManifestAssignment) -> Unit,
@@ -425,6 +811,11 @@ fun DriverDashboard(
                 Text("CARS Driver", color = CarsColors.PaleBlue, fontWeight = FontWeight.Bold)
                 Text(session.driver?.name.orEmpty(), color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(session.organization.name, color = CarsColors.PaleBlue, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            TextButton(onClick = onBackHome) {
+                Icon(Icons.Default.Home, contentDescription = null, tint = Color.White)
+                Spacer(Modifier.width(6.dp))
+                Text("Home", color = Color.White)
             }
             TextButton(onClick = onLogout) {
                 Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, tint = Color.White)

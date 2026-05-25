@@ -23,6 +23,70 @@ data class OrganizationSummary(val id: String, val name: String, val slug: Strin
 data class DriverSummary(val id: String, val name: String, val status: String)
 
 @Serializable
+data class MobileProfile(
+    val user: UserSummary,
+    val organization: OrganizationSummary,
+    val role: String? = null,
+    val permissions: List<String> = emptyList(),
+    val driver: DriverSummary? = null,
+    val rider: MobileRiderProfile? = null
+)
+
+@Serializable
+data class MobileRiderProfile(
+    val id: String,
+    val displayName: String,
+    val firstName: String,
+    val lastName: String,
+    val phone: String? = null,
+    val email: String? = null,
+    val addressLine1: String? = null,
+    val city: String? = null,
+    val county: String? = null,
+    val state: String? = null,
+    val postalCode: String? = null,
+    val communicationPreference: String? = null,
+    val pickupInstructions: String? = null
+)
+
+@Serializable
+data class ProfileUpdatePayload(
+    val name: String,
+    val phone: String,
+    val addressLine1: String,
+    val city: String,
+    val county: String,
+    val state: String,
+    val postalCode: String,
+    val communicationPreference: String,
+    val pickupInstructions: String
+)
+
+@Serializable
+data class RideRequestPayload(
+    val pickupAddress: String,
+    val pickupCity: String,
+    val pickupCounty: String,
+    val pickupState: String,
+    val pickupPostalCode: String,
+    val dropoffAddress: String,
+    val dropoffCity: String,
+    val dropoffCounty: String,
+    val dropoffState: String,
+    val dropoffPostalCode: String,
+    val appointmentAt: String,
+    val ridePurpose: String,
+    val specialInstructions: String
+)
+
+@Serializable
+data class MobileRideRequestResult(
+    val id: String,
+    val status: String,
+    val tripLegCount: Int
+)
+
+@Serializable
 data class ManifestResponse(
     val date: String,
     val assignments: List<ManifestAssignment> = emptyList()

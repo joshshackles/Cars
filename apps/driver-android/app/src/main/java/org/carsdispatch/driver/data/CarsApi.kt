@@ -46,6 +46,26 @@ class CarsApi(private val tokenProvider: () -> String?) {
         return get("/api/mobile/driver/manifest?date=$date", ManifestResponse.serializer())
     }
 
+    suspend fun profile(): MobileProfile {
+        return get("/api/mobile/user/profile", MobileProfile.serializer())
+    }
+
+    suspend fun updateProfile(payload: ProfileUpdatePayload): MobileProfile {
+        return post(
+            "/api/mobile/user/profile",
+            json.encodeToString(ProfileUpdatePayload.serializer(), payload),
+            MobileProfile.serializer()
+        )
+    }
+
+    suspend fun requestRide(payload: RideRequestPayload): MobileRideRequestResult {
+        return post(
+            "/api/mobile/ride-requests",
+            json.encodeToString(RideRequestPayload.serializer(), payload),
+            MobileRideRequestResult.serializer()
+        )
+    }
+
     suspend fun acceptAssignment(assignmentId: String) {
         postRaw("/api/mobile/assignments/$assignmentId/accept", "{}")
     }
