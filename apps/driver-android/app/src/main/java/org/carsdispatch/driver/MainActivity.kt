@@ -893,13 +893,27 @@ fun DriverToolsScreen(
     var maxDistance by remember { mutableStateOf("") }
     var counties by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
+    var driverInfoOpen by remember { mutableStateOf(true) }
+    var availabilityOpen by remember { mutableStateOf(false) }
+    var mileageOpen by remember { mutableStateOf(false) }
+    var reimbursementsOpen by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 72.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item { BackTitle("Driver profile", "Vehicle, availability, rides, and reimbursements.", onBack) }
+        item { BackTitle("Driver cabinet", "Availability, mileage, reimbursements, and driver info.", onBack) }
+        item {
+            CabinetHeader(
+                title = "Driver info",
+                subtitle = driver?.vehicleLabel ?: "Vehicle, insurance, and reimbursement preference",
+                countLabel = driver?.status?.prettyLabel() ?: "Not loaded",
+                expanded = driverInfoOpen,
+                onToggle = { driverInfoOpen = !driverInfoOpen }
+            )
+        }
+        if (driverInfoOpen) {
         item {
             Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -932,6 +946,17 @@ fun DriverToolsScreen(
                 }
             }
         }
+        }
+        item {
+            CabinetHeader(
+                title = "Availability",
+                subtitle = "Add availability, recurring time, or blackout dates",
+                countLabel = "${driver?.availabilities?.size ?: 0} active",
+                expanded = availabilityOpen,
+                onToggle = { availabilityOpen = !availabilityOpen }
+            )
+        }
+        if (availabilityOpen) {
         item {
             Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1020,6 +1045,17 @@ fun DriverToolsScreen(
                 }
             }
         }
+        }
+        item {
+            CabinetHeader(
+                title = "Mileage",
+                subtitle = "Upcoming, past rides, and captured mileage",
+                countLabel = "${(tools?.upcomingRides?.size ?: 0) + (tools?.pastRides?.size ?: 0)} rides",
+                expanded = mileageOpen,
+                onToggle = { mileageOpen = !mileageOpen }
+            )
+        }
+        if (mileageOpen) {
         item { SectionHeader("Upcoming accepted rides", tools?.upcomingRides?.size ?: 0) }
         if (tools?.upcomingRides.isNullOrEmpty()) {
             item { SectionEmpty("Accepted future rides will appear here.") }
@@ -1032,6 +1068,17 @@ fun DriverToolsScreen(
         } else {
             items(tools!!.pastRides, key = { it.id }) { RideSummaryCard(it) }
         }
+        }
+        item {
+            CabinetHeader(
+                title = "Reimbursements",
+                subtitle = "Pending mileage, paid totals, and payment batches",
+                countLabel = (tools?.reimbursement?.pendingCents ?: 0).formatCents(),
+                expanded = reimbursementsOpen,
+                onToggle = { reimbursementsOpen = !reimbursementsOpen }
+            )
+        }
+        if (reimbursementsOpen) {
         item {
             Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1046,6 +1093,36 @@ fun DriverToolsScreen(
                     if (tools?.reimbursement?.mileageRecords.isNullOrEmpty()) {
                         Text("Submitted mileage will appear here after completed rides.", color = CarsColors.Muted)
                     }
+                }
+            }
+        }
+        }
+    }
+}
+
+@Composable
+fun CabinetHeader(
+    title: String,
+    subtitle: String,
+    countLabel: String,
+    expanded: Boolean,
+    onToggle: () -> Unit
+) {
+    Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, color = CarsColors.Navy, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                Text(subtitle, color = CarsColors.Muted, lineHeight = 20.sp)
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(countLabel, color = CarsColors.Navy, fontWeight = FontWeight.Black)
+                TextButton(onClick = onToggle) {
+                    Text(if (expanded) "Close" else "Open", color = CarsColors.Red, fontWeight = FontWeight.Black)
                 }
             }
         }
