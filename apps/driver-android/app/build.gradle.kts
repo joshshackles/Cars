@@ -5,7 +5,7 @@ plugins {
 }
 
 val carsApiBaseUrl = providers.gradleProperty("carsApiBaseUrl")
-    .orElse("https://cars-oupxxfq6p-josh-shackles-projects.vercel.app")
+    .orElse("https://cars-snowy-psi.vercel.app")
 
 android {
     namespace = "org.carsdispatch.driver"

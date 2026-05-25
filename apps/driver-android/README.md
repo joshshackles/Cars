@@ -28,7 +28,7 @@ The Expo driver app remains in `apps/driver-mobile` as a reference client while 
 The app defaults to:
 
 ```properties
-carsApiBaseUrl=https://cars-oupxxfq6p-josh-shackles-projects.vercel.app
+carsApiBaseUrl=https://cars-snowy-psi.vercel.app
 ```
 
 Override it in `gradle.properties` if you need to point at a preview deployment or local tunnel.
