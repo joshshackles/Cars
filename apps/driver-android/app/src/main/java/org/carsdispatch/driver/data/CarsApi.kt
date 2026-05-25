@@ -1,5 +1,6 @@
 package org.carsdispatch.driver.data
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
@@ -156,12 +157,17 @@ class CarsApi(private val tokenProvider: () -> String?) {
             client.newCall(request).execute().use { response ->
                 val responseBody = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
+                    Log.w("CarsApi", "HTTP ${response.code} for $path: ${responseBody.take(300)}")
                     val serverMessage = runCatching {
                         json.parseToJsonElement(responseBody).jsonObject["error"]?.jsonPrimitive?.contentOrNull
                     }.getOrNull()
                     val friendlyMessage = when {
+                        path == "/api/mobile/auth/login" && !serverMessage.isNullOrBlank() ->
+                            serverMessage
                         path == "/api/mobile/auth/login" && response.code == 401 ->
-                            "Use a valid CARS email and mobile access code."
+                            "Use a valid CARS email and mobile access code, or continue with Google to create or validate your account."
+                        path == "/api/mobile/auth/login" ->
+                            "Mobile sign-in failed with HTTP ${response.code}. Continue with Google or create/validate your account below."
                         response.code == 401 ->
                             "Your mobile session expired. Please sign in again."
                         !serverMessage.isNullOrBlank() ->

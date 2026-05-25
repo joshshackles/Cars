@@ -782,8 +782,11 @@ fun StaffMobileHome(session: MobileSession, onLogout: () -> Unit) {
 
 @Composable
 fun LoginScreen(busy: Boolean, error: String?, onLogin: (String, String) -> Unit) {
+    val context = LocalContext.current
     var email by remember { mutableStateOf("driver@esc.example") }
     var accessCode by remember { mutableStateOf("") }
+    val webLoginUrl = "${BuildConfig.CARS_API_BASE_URL}/login?source=android"
+    val googleLoginUrl = "${BuildConfig.CARS_API_BASE_URL}/api/auth/google/start?source=android"
 
     Column(
         modifier = Modifier
@@ -826,8 +829,38 @@ fun LoginScreen(busy: Boolean, error: String?, onLogin: (String, String) -> Unit
                 )
                 PrimaryButton("Sign in", busy) { onLogin(email, accessCode) }
                 if (error != null) ErrorText(error)
+                OutlinedButton(
+                    onClick = {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(googleLoginUrl)))
+                    },
+                    enabled = !busy,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                ) {
+                    Text("Continue with Google", fontWeight = FontWeight.Black, color = CarsColors.Navy)
+                }
+                OutlinedButton(
+                    onClick = {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(webLoginUrl)))
+                    },
+                    enabled = !busy,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                ) {
+                    Text("Create or validate account", fontWeight = FontWeight.Black, color = CarsColors.Navy)
+                }
+                TextButton(
+                    onClick = {
+                        context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:4174382925")))
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Need help? Call CARS", fontWeight = FontWeight.Bold, color = CarsColors.Red)
+                }
                 Text(
-                    "Driver trip tools appear for linked driver profiles. Staff accounts can sign in here and use the web workspace for operations.",
+                    "Google sign-in opens the secure CARS web workspace for account creation or validation. Return here after your account is linked.",
                     color = CarsColors.Muted,
                     fontSize = 12.sp,
                     lineHeight = 17.sp
