@@ -108,5 +108,17 @@ function getLoginErrorMessage(error: string) {
     return "Google sign-in expired. Please try again.";
   }
 
+  if (error === "google-config") {
+    return "Google sign-in is not fully configured yet. Check the Google OAuth environment variables in Vercel.";
+  }
+
+  if (error === "google-token") {
+    return "Google could not validate the sign-in callback. Check that the authorized redirect URI matches this app URL exactly.";
+  }
+
+  if (error === "google-profile") {
+    return "Google sign-in succeeded, but the profile could not be validated. Please try again.";
+  }
+
   return error;
 }

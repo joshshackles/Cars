@@ -136,6 +136,14 @@ http://localhost:3000/api/auth/google/callback
 
 Google sign-in validates that Google returned a verified email address. If the email already belongs to a CARS user with an active membership, the user is signed in. If the email matches a pending invitation, the app creates/links the user and activates that membership. If there is no membership or invitation, the account is created for validation and routed to the pending account page.
 
+To verify production Google configuration without exposing secrets, open:
+
+```text
+https://YOUR_DOMAIN/api/auth/google/status
+```
+
+The returned `redirectUri` must exactly match an authorized redirect URI in the Google OAuth client.
+
 During local scaffold development, `src/lib/auth/session.ts` returns a demo user in the `Economic Security Corporation` organization. Change `CARS_DEMO_ROLE`, `CARS_DEMO_EMAIL`, and `CARS_DEMO_NAME` in `.env` to preview role-aware navigation and page access. Use `CARS_DEMO_ROLE=driver` and `CARS_DEMO_EMAIL=driver@esc.example` to preview the driver portal.
 
 Supported roles:

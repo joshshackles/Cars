@@ -27,7 +27,7 @@ export function isGoogleOAuthConfigured() {
   return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 }
 
-export async function startGoogleSignIn() {
+export async function startGoogleSignIn(requestOrigin?: string) {
   assertGoogleOAuthConfigured();
   const state = randomBytes(24).toString("base64url");
   const cookieStore = await cookies();
@@ -42,7 +42,7 @@ export async function startGoogleSignIn() {
 
   const params = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID!,
-    redirect_uri: getGoogleRedirectUri(),
+    redirect_uri: getGoogleRedirectUri(requestOrigin),
     response_type: "code",
     scope: "openid email profile",
     state,
@@ -55,9 +55,11 @@ export async function startGoogleSignIn() {
 export async function completeGoogleSignIn({
   code,
   state,
+  requestOrigin,
 }: {
   code: string | null;
   state: string | null;
+  requestOrigin?: string;
 }) {
   assertGoogleOAuthConfigured();
   const cookieStore = await cookies();
@@ -68,7 +70,7 @@ export async function completeGoogleSignIn({
     redirect("/login?error=google-state");
   }
 
-  const token = await exchangeGoogleCode(code);
+  const token = await exchangeGoogleCode(code, requestOrigin);
   const profile = await getGoogleProfile(token);
 
   if (!profile.email_verified) {
@@ -106,7 +108,7 @@ export async function completeGoogleSignIn({
   redirect(activeMembership.role.key === "driver" ? "/driver-portal" : "/dashboard");
 }
 
-async function exchangeGoogleCode(code: string) {
+async function exchangeGoogleCode(code: string, requestOrigin?: string) {
   const response = await fetch(googleTokenUrl, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -114,7 +116,7 @@ async function exchangeGoogleCode(code: string) {
       code,
       client_id: process.env.GOOGLE_CLIENT_ID!,
       client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-      redirect_uri: getGoogleRedirectUri(),
+      redirect_uri: getGoogleRedirectUri(requestOrigin),
       grant_type: "authorization_code",
     }),
   });
@@ -122,7 +124,10 @@ async function exchangeGoogleCode(code: string) {
   const payload = (await response.json()) as GoogleTokenResponse;
 
   if (!response.ok || !payload.access_token) {
-    throw new Error(payload.error_description ?? payload.error ?? "Google authorization failed.");
+    throw new GoogleOAuthError(
+      "google-token",
+      payload.error_description ?? payload.error ?? "Google authorization failed."
+    );
   }
 
   return payload.access_token;
@@ -134,7 +139,7 @@ async function getGoogleProfile(accessToken: string) {
   });
 
   if (!response.ok) {
-    throw new Error("Google profile validation failed.");
+    throw new GoogleOAuthError("google-profile", "Google profile validation failed.");
   }
 
   return (await response.json()) as GoogleUserInfo;
@@ -222,14 +227,17 @@ async function acceptPendingInvitation(userId: string, email: string) {
   ]);
 }
 
-function getGoogleRedirectUri() {
+export function getGoogleRedirectUri(requestOrigin?: string) {
   if (process.env.GOOGLE_REDIRECT_URI) {
     return process.env.GOOGLE_REDIRECT_URI;
   }
 
-  const baseUrl = process.env.NEXTAUTH_URL ?? process.env.APP_URL;
+  const baseUrl = process.env.NEXTAUTH_URL ?? process.env.APP_URL ?? requestOrigin;
   if (!baseUrl) {
-    throw new Error("Set GOOGLE_REDIRECT_URI or APP_URL for Google sign-in.");
+    throw new GoogleOAuthError(
+      "google-config",
+      "Set GOOGLE_REDIRECT_URI, APP_URL, or NEXTAUTH_URL for Google sign-in."
+    );
   }
 
   return `${baseUrl.replace(/\/$/, "")}/api/auth/google/callback`;
@@ -237,6 +245,16 @@ function getGoogleRedirectUri() {
 
 function assertGoogleOAuthConfigured() {
   if (!isGoogleOAuthConfigured()) {
-    throw new Error("Google OAuth is not configured.");
+    throw new GoogleOAuthError("google-config", "Google OAuth is not configured.");
+  }
+}
+
+export class GoogleOAuthError extends Error {
+  constructor(
+    readonly code: string,
+    message: string
+  ) {
+    super(message);
+    this.name = "GoogleOAuthError";
   }
 }
