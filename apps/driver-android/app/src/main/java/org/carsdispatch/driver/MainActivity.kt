@@ -194,28 +194,27 @@ fun CarsDriverApp() {
                         scope.launch {
                             busy = true
                             error = null
-                            runCatching {
-                                val nextSession = CarsApi { null }.login(email, accessCode, "Android")
+                            runCatching { CarsApi { null }.login(email, accessCode, "Android") }
+                                .onSuccess { nextSession ->
                                 val nextApi = CarsApi { nextSession.token }
-                                val nextManifest = if (nextSession.driver != null) {
-                                    nextApi.manifest(LocalDate.now().toString())
-                                } else {
-                                    null
-                                }
-                                val nextDriverTools = if (nextSession.driver != null) {
-                                    nextApi.driverTools()
-                                } else {
-                                    null
-                                }
                                 sessionStore.save(nextSession)
                                 session = nextSession
-                                profile = nextApi.profile()
-                                manifest = nextManifest
-                                driverTools = nextDriverTools
                                 screen = MobileScreen.Home
-                            }.onFailure {
-                                error = it.message
+
+                                runCatching { nextApi.profile() }
+                                    .onSuccess { profile = it }
+
+                                if (nextSession.driver != null) {
+                                    runCatching { nextApi.manifest(LocalDate.now().toString()) }
+                                        .onSuccess { manifest = it }
+
+                                    runCatching { nextApi.driverTools() }
+                                        .onSuccess { driverTools = it }
+                                }
                             }
+                                .onFailure {
+                                    error = it.message
+                                }
                             busy = false
                         }
                     }
