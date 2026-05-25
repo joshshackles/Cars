@@ -42,7 +42,9 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ReportProblem
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -229,6 +231,12 @@ fun CarsDriverApp() {
                     activeTracking = activeTracking,
                     onRefresh = ::refreshManifest,
                     onBackHome = { screen = MobileScreen.Home },
+                    onOpenSettings = {
+                        driverCabinetSection = DriverCabinetSections.DriverInfo
+                        screen = MobileScreen.DriverTools
+                    },
+                    onRequestRide = { screen = MobileScreen.RideRequest },
+                    onProfile = { screen = MobileScreen.Profile },
                     onLogout = {
                         scope.launch {
                             runCatching { api.logout() }
@@ -582,7 +590,7 @@ fun MobileHomeScreen(
             item {
                 HomeActionCard(
                     icon = Icons.Default.Edit,
-                    title = "Driver cabinet",
+                    title = "Driver settings",
                     description = "Availability, mileage, reimbursements, and driver info.",
                     onClick = { onOpenDriverCabinet(DriverCabinetSections.DriverInfo) }
                 )
@@ -654,8 +662,12 @@ fun DriverHomeFeatureGrid(
                 DriverMenuButton("Pay", "Reimbursements", Icons.Default.CheckCircle, Modifier.weight(1f), onReimbursements)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                DriverMenuButton("Profile", "Contact info", Icons.Default.Person, Modifier.weight(1f), onProfile)
                 DriverMenuButton("Ride", "Request help", Icons.Default.Call, Modifier.weight(1f), onRideRequest)
+                DriverMenuButton("Settings", "Driver cabinet", Icons.Default.Settings, Modifier.weight(1f), onDriverInfo)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                DriverMenuButton("Profile", "Contact info", Icons.Default.Person, Modifier.weight(1f), onProfile)
+                DriverMenuButton("Support", "Call CARS", Icons.Default.Call, Modifier.weight(1f), onCallCars)
             }
             OutlinedButton(onClick = onCallCars, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                 Icon(Icons.Default.Call, contentDescription = null, tint = CarsColors.Red)
@@ -1480,6 +1492,9 @@ fun DriverDashboard(
     activeTracking: TrackingState?,
     onRefresh: () -> Unit,
     onBackHome: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onRequestRide: () -> Unit,
+    onProfile: () -> Unit,
     onLogout: () -> Unit,
     onAction: (String, suspend (CarsApi) -> Unit) -> Unit,
     onStartTracking: (ManifestAssignment) -> Unit,
@@ -1575,6 +1590,11 @@ fun DriverDashboard(
                 busy = busy,
                 error = error,
                 onRefresh = onRefresh,
+                onOpenDashboard = { },
+                onOpenSettings = onOpenSettings,
+                onRequestRide = onRequestRide,
+                onProfile = onProfile,
+                onCallCars = { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:4174382925"))) },
                 onSelectAssignment = { selectedAssignmentId = it.id }
             )
         }
@@ -1588,6 +1608,11 @@ fun ManifestList(
     busy: Boolean,
     error: String?,
     onRefresh: () -> Unit,
+    onOpenDashboard: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onRequestRide: () -> Unit,
+    onProfile: () -> Unit,
+    onCallCars: () -> Unit,
     onSelectAssignment: (ManifestAssignment) -> Unit
 ) {
     val assignments = manifest?.assignments.orEmpty()
@@ -1599,6 +1624,7 @@ fun ManifestList(
         contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 72.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        item { DashboardGreetingCard() }
         item { SummaryCard(manifest, activeTracking, busy, error, onRefresh) }
         if (assignments.isEmpty()) {
             item { EmptyManifestCard() }
@@ -1621,6 +1647,46 @@ fun ManifestList(
                 }
             }
         }
+        item {
+            DriverDashboardQuickActions(
+                onOpenDashboard = onOpenDashboard,
+                onRequestRide = onRequestRide,
+                onProfile = onProfile,
+                onOpenSettings = onOpenSettings
+            )
+        }
+        item { DriverHelpCard(onCallCars = onCallCars) }
+    }
+}
+
+@Composable
+fun DashboardGreetingCard() {
+    Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Hi",
+                fontSize = 34.sp,
+                fontWeight = FontWeight.Black,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .background(CarsColors.PaleBlue, RoundedCornerShape(999.dp))
+                    .padding(horizontal = 18.dp, vertical = 16.dp)
+            )
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Ready for today's rides?", color = CarsColors.Navy, fontSize = 24.sp, fontWeight = FontWeight.Black)
+                Text(
+                    "Start with your manifest, then use settings for vehicle info, availability, mileage, and reimbursements.",
+                    color = CarsColors.Muted,
+                    lineHeight = 20.sp
+                )
+            }
+        }
     }
 }
 
@@ -1632,26 +1698,119 @@ fun SummaryCard(
     error: String?,
     onRefresh: () -> Unit
 ) {
-    Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+    Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Driver dashboard", fontSize = 22.sp, fontWeight = FontWeight.Black, color = CarsColors.Navy)
-                    Text("Today's manifest and GPS mileage capture", color = CarsColors.Muted)
                 }
-                OutlinedButton(onClick = onRefresh, enabled = !busy) {
-                    if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("Refresh")
+                TextButton(onClick = onRefresh, enabled = !busy) {
+                    if (busy) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Default.Refresh, contentDescription = null, tint = CarsColors.Navy)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Refresh", color = CarsColors.Navy, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Metric("Active", (manifest?.assignments.orEmpty().count { !it.isFinalized() }).toString(), Modifier.weight(1f))
-                Metric("Done", (manifest?.assignments.orEmpty().count { it.isFinalized() }).toString(), Modifier.weight(1f))
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Metric("Total", (manifest?.assignments?.size ?: 0).toString(), Modifier.weight(1f))
-                Metric("GPS points", (activeTracking?.points ?: 0).toString(), Modifier.weight(1f))
+                MiniMetric(Icons.Default.DirectionsCar, "Active", (manifest?.assignments.orEmpty().count { !it.isFinalized() }).toString(), Modifier.weight(1f))
+                MiniMetric(Icons.Default.CheckCircle, "Done", (manifest?.assignments.orEmpty().count { it.isFinalized() }).toString(), Modifier.weight(1f))
+                MiniMetric(Icons.Default.Event, "Total", (manifest?.assignments?.size ?: 0).toString(), Modifier.weight(1f))
+                MiniMetric(Icons.Default.LocationOn, "GPS", (activeTracking?.points ?: 0).toString(), Modifier.weight(1f))
             }
             if (error != null) ErrorText(error)
+        }
+    }
+}
+
+@Composable
+fun MiniMetric(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier
+            .background(CarsColors.Soft, RoundedCornerShape(10.dp))
+            .padding(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(icon, contentDescription = null, tint = CarsColors.Navy, modifier = Modifier.size(22.dp))
+        Text(value, color = CarsColors.Navy, fontSize = 24.sp, fontWeight = FontWeight.Black)
+        Text(label, color = CarsColors.Muted, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
+    }
+}
+
+@Composable
+fun DriverDashboardQuickActions(
+    onOpenDashboard: () -> Unit,
+    onRequestRide: () -> Unit,
+    onProfile: () -> Unit,
+    onOpenSettings: () -> Unit
+) {
+    Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Quick actions", color = CarsColors.Navy, fontSize = 21.sp, fontWeight = FontWeight.Black)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DashboardActionButton("Today", "dashboard", Icons.Default.DirectionsCar, Modifier.weight(1f), onOpenDashboard)
+                DashboardActionButton("Request", "a ride", Icons.Default.Event, Modifier.weight(1f), onRequestRide)
+                DashboardActionButton("Update", "my info", Icons.Default.Person, Modifier.weight(1f), onProfile)
+                DashboardActionButton("Settings", "driver", Icons.Default.Settings, Modifier.weight(1f), onOpenSettings)
+            }
+        }
+    }
+}
+
+@Composable
+fun DashboardActionButton(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier.height(86.dp),
+        shape = RoundedCornerShape(10.dp),
+        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+            Icon(icon, contentDescription = null, tint = CarsColors.Navy, modifier = Modifier.size(28.dp))
+            Spacer(Modifier.height(4.dp))
+            Text(title, color = CarsColors.Navy, fontWeight = FontWeight.Black, fontSize = 13.sp, maxLines = 1)
+            Text(subtitle, color = CarsColors.Muted, fontSize = 12.sp, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+fun DriverHelpCard(onCallCars: () -> Unit) {
+    Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF0F0))) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Default.Call,
+                contentDescription = null,
+                tint = CarsColors.Red,
+                modifier = Modifier
+                    .background(Color(0xFFFFD8D8), RoundedCornerShape(999.dp))
+                    .padding(14.dp)
+                    .size(28.dp)
+            )
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Need immediate help?", color = CarsColors.Red, fontWeight = FontWeight.Black, fontSize = 18.sp)
+                Text("Call CARS at 417-438-2925.", color = CarsColors.Navy, fontWeight = FontWeight.Bold)
+                Text("Role: Driver", color = CarsColors.Muted)
+            }
+            Button(onClick = onCallCars, colors = ButtonDefaults.buttonColors(containerColor = CarsColors.Red)) {
+                Icon(Icons.Default.Call, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text("Call", fontWeight = FontWeight.Black)
+            }
         }
     }
 }
