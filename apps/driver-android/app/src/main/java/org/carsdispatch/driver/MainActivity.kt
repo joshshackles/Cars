@@ -155,7 +155,7 @@ fun CarsDriverApp() {
         val stored = sessionStore.load()
         session = stored
         if (stored != null) {
-            screen = MobileScreen.Home
+            screen = if (stored.driver != null) MobileScreen.DriverDashboard else MobileScreen.Home
             busy = true
             runCatching { CarsApi { stored.token }.manifest(LocalDate.now().toString()) }
                 .onSuccess { manifest = it }
@@ -199,7 +199,7 @@ fun CarsDriverApp() {
                                 val nextApi = CarsApi { nextSession.token }
                                 sessionStore.save(nextSession)
                                 session = nextSession
-                                screen = MobileScreen.Home
+                                screen = if (nextSession.driver != null) MobileScreen.DriverDashboard else MobileScreen.Home
 
                                 runCatching { nextApi.profile() }
                                     .onSuccess { profile = it }
@@ -496,9 +496,37 @@ fun MobileHomeScreen(session: MobileSession, profile: MobileProfile?, onNavigate
         item {
             Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("How can we help today?", color = CarsColors.Navy, fontSize = 25.sp, fontWeight = FontWeight.Black)
-                    Text("Request a ride, keep your contact details current, or open your driver dashboard.", color = CarsColors.Muted, lineHeight = 21.sp)
+                    Text(
+                        if (session.driver != null) "Ready for today's rides?" else "How can we help today?",
+                        color = CarsColors.Navy,
+                        fontSize = 25.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                    Text(
+                        if (session.driver != null) "Start with your manifest, then use the cabinet for vehicle info, availability, mileage, and reimbursements."
+                        else "Request a ride, keep your contact details current, or open your driver dashboard.",
+                        color = CarsColors.Muted,
+                        lineHeight = 21.sp
+                    )
                 }
+            }
+        }
+        if (session.driver != null) {
+            item {
+                HomeActionCard(
+                    icon = Icons.Default.DirectionsCar,
+                    title = "Today's driver dashboard",
+                    description = "Assigned rides, route tools, GPS mileage, and trip status.",
+                    onClick = { onNavigate(MobileScreen.DriverDashboard) }
+                )
+            }
+            item {
+                HomeActionCard(
+                    icon = Icons.Default.Edit,
+                    title = "Driver cabinet",
+                    description = "Availability, mileage, reimbursements, and driver info.",
+                    onClick = { onNavigate(MobileScreen.DriverTools) }
+                )
             }
         }
         item {
@@ -516,24 +544,6 @@ fun MobileHomeScreen(session: MobileSession, profile: MobileProfile?, onNavigate
                 description = profile?.rider?.phone ?: "Add phone, address, pickup notes, and preferences.",
                 onClick = { onNavigate(MobileScreen.Profile) }
             )
-        }
-        if (session.driver != null) {
-            item {
-                HomeActionCard(
-                    icon = Icons.Default.Edit,
-                    title = "Driver profile",
-                    description = "Vehicle, insurance, availability, rides, and reimbursements.",
-                    onClick = { onNavigate(MobileScreen.DriverTools) }
-                )
-            }
-            item {
-                HomeActionCard(
-                    icon = Icons.Default.DirectionsCar,
-                    title = "Driver dashboard",
-                    description = "Open assigned rides, route tools, GPS mileage, and trip status.",
-                    onClick = { onNavigate(MobileScreen.DriverDashboard) }
-                )
-            }
         }
         item {
             Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
@@ -1356,6 +1366,7 @@ fun Metric(label: String, value: String, modifier: Modifier = Modifier) {
 fun TripListItem(assignment: ManifestAssignment, onOpen: () -> Unit) {
     val trip = assignment.tripLeg
     val rider = trip.rideRequest.rider
+    val nextStep = assignment.driverNextStep()
 
     Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1375,8 +1386,9 @@ fun TripListItem(assignment: ManifestAssignment, onOpen: () -> Unit) {
                 trip.dropoffAddress.fullAddress(trip.dropoffCity, trip.dropoffState, trip.dropoffPostalCode),
                 color = CarsColors.Muted
             )
+            Text(nextStep, color = CarsColors.Navy, fontWeight = FontWeight.Bold)
             Button(onClick = onOpen, colors = ButtonDefaults.buttonColors(containerColor = CarsColors.Navy), modifier = Modifier.fillMaxWidth()) {
-                Text("Open trip tools", fontWeight = FontWeight.Black)
+                Text("Open tools", fontWeight = FontWeight.Black)
             }
         }
     }
@@ -1642,6 +1654,20 @@ fun ManifestAssignment.isFinalized(): Boolean {
     return mileageRecord != null ||
         status in listOf("COMPLETED", "DECLINED", "CANCELED") ||
         tripLeg.status in listOf("COMPLETED", "CANCELED", "NO_SHOW")
+}
+
+fun ManifestAssignment.driverNextStep(): String {
+    return when {
+        isFinalized() -> "Finished: mileage and trip history are available."
+        status == "OFFERED" -> "Next: accept or decline this assignment."
+        status == "ACCEPTED" && tripLeg.status in listOf("DRIVER_CONFIRMED", "ASSIGNED") ->
+            "Next: open the route, then start GPS mileage."
+        status == "ACCEPTED" && tripLeg.status in listOf("EN_ROUTE", "IN_PROGRESS") ->
+            "Next: mark arrived when you reach pickup."
+        status == "ACCEPTED" && tripLeg.status == "ARRIVED" ->
+            "Next: complete the trip after dropoff."
+        else -> "Next: open tools for route, notes, and trip actions."
+    }
 }
 
 fun String?.fullAddress(city: String?, state: String?, postalCode: String?): String {
