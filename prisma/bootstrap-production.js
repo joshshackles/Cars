@@ -243,11 +243,14 @@ async function main() {
 }
 
 async function seedOperationalDemoData(organizationId, userId, fundingSourceId) {
+  const now = new Date();
   const today = getCentralStartOfToday();
   const tomorrow = new Date(today);
   tomorrow.setDate(today.getDate() + 1);
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
+  const activeAvailabilityStart = new Date(now.getTime() - 30 * 60 * 1000);
+  const activeAvailabilityEnd = new Date(now.getTime() + 8 * 60 * 60 * 1000);
 
   const rider = await upsertFirst(
     () => prisma.rider.findFirst({ where: { organizationId, email: "casey.rider@example.org", deletedAt: null } }),
@@ -303,8 +306,8 @@ async function seedOperationalDemoData(organizationId, userId, fundingSourceId) 
         ? prisma.driverAvailability.update({
             where: { id: existing.id },
             data: {
-              startsAt: new Date(today.getTime() + 8 * 60 * 60 * 1000),
-              endsAt: new Date(today.getTime() + 17 * 60 * 60 * 1000),
+              startsAt: activeAvailabilityStart,
+              endsAt: activeAvailabilityEnd,
               updatedById: userId,
             },
           })
@@ -316,8 +319,8 @@ async function seedOperationalDemoData(organizationId, userId, fundingSourceId) 
               availabilityType: "one_time",
               preferredCounties: ["jasper", "newton"],
               maxDistanceMiles: 45,
-              startsAt: new Date(today.getTime() + 8 * 60 * 60 * 1000),
-              endsAt: new Date(today.getTime() + 17 * 60 * 60 * 1000),
+              startsAt: activeAvailabilityStart,
+              endsAt: activeAvailabilityEnd,
               notes: "bootstrap-demo-availability",
               createdById: userId,
               updatedById: userId,
@@ -438,6 +441,54 @@ async function seedOperationalDemoData(organizationId, userId, fundingSourceId) 
       createdById: userId,
       updatedById: userId,
     },
+  });
+
+  await ensureAvailableRideOffer({
+    organizationId,
+    userId,
+    fundingSourceId,
+    riderId: rider.id,
+    destinationId: destination.id,
+    noteKey: "bootstrap-demo-available-ride-1",
+    riderPurpose: "medical",
+    pickupMinutesFromNow: 90,
+    dropoffMinutesFromNow: 125,
+    pickupAddress: "418 S Pearl Ave",
+    pickupCity: "Joplin",
+    pickupCounty: "jasper",
+    pickupState: "MO",
+    pickupPostalCode: "64801",
+    dropoffAddress: "221 Clinic Way",
+    dropoffCity: "Joplin",
+    dropoffCounty: "jasper",
+    dropoffState: "MO",
+    dropoffPostalCode: "64801",
+    estimatedMiles: 6.8,
+    specialInstructions: "Demo available ride offer for driver matching.",
+  });
+
+  await ensureAvailableRideOffer({
+    organizationId,
+    userId,
+    fundingSourceId,
+    riderId: rider.id,
+    destinationId: destination.id,
+    noteKey: "bootstrap-demo-available-ride-2",
+    riderPurpose: "grocery",
+    pickupMinutesFromNow: 180,
+    dropoffMinutesFromNow: 220,
+    pickupAddress: "715 W 4th St",
+    pickupCity: "Joplin",
+    pickupCounty: "jasper",
+    pickupState: "MO",
+    pickupPostalCode: "64801",
+    dropoffAddress: "1600 S Range Line Rd",
+    dropoffCity: "Joplin",
+    dropoffCounty: "jasper",
+    dropoffState: "MO",
+    dropoffPostalCode: "64804",
+    estimatedMiles: 5.2,
+    specialInstructions: "Second demo available ride offer for driver matching.",
   });
 
   const completedRequest = await upsertFirst(
@@ -569,6 +620,127 @@ async function seedOperationalDemoData(organizationId, userId, fundingSourceId) 
 async function upsertFirst(findExisting, write) {
   const existing = await findExisting();
   return write(existing);
+}
+
+async function ensureAvailableRideOffer({
+  organizationId,
+  userId,
+  fundingSourceId,
+  riderId,
+  destinationId,
+  noteKey,
+  riderPurpose,
+  pickupMinutesFromNow,
+  dropoffMinutesFromNow,
+  pickupAddress,
+  pickupCity,
+  pickupCounty,
+  pickupState,
+  pickupPostalCode,
+  dropoffAddress,
+  dropoffCity,
+  dropoffCounty,
+  dropoffState,
+  dropoffPostalCode,
+  estimatedMiles,
+  specialInstructions,
+}) {
+  const now = new Date();
+  const scheduledPickupAt = new Date(now.getTime() + pickupMinutesFromNow * 60 * 1000);
+  const scheduledDropoffAt = new Date(now.getTime() + dropoffMinutesFromNow * 60 * 1000);
+
+  const request = await upsertFirst(
+    () => prisma.rideRequest.findFirst({ where: { organizationId, notes: noteKey, deletedAt: null } }),
+    (existing) =>
+      existing
+        ? prisma.rideRequest.update({
+            where: { id: existing.id },
+            data: {
+              riderId,
+              fundingSourceId,
+              status: "PENDING_ASSIGNMENT",
+              purpose: riderPurpose,
+              neededAt: scheduledPickupAt,
+              pickupWindowStart: scheduledPickupAt,
+              pickupWindowEnd: scheduledDropoffAt,
+              specialInstructions,
+              updatedById: userId,
+            },
+          })
+        : prisma.rideRequest.create({
+            data: {
+              organizationId,
+              riderId,
+              fundingSourceId,
+              status: "PENDING_ASSIGNMENT",
+              purpose: riderPurpose,
+              requestSource: "phone",
+              neededAt: scheduledPickupAt,
+              pickupWindowStart: scheduledPickupAt,
+              pickupWindowEnd: scheduledDropoffAt,
+              specialInstructions,
+              notes: noteKey,
+              createdById: userId,
+              updatedById: userId,
+            },
+          })
+  );
+
+  const tripLeg = await upsertFirst(
+    () => prisma.tripLeg.findFirst({ where: { organizationId, rideRequestId: request.id, notes: noteKey, deletedAt: null } }),
+    (existing) =>
+      existing
+        ? prisma.tripLeg.update({
+            where: { id: existing.id },
+            data: {
+              dropoffDestinationId: destinationId,
+              status: "READY_TO_ASSIGN",
+              pickupAddress,
+              pickupCity,
+              pickupCounty,
+              pickupState,
+              pickupPostalCode,
+              dropoffAddress,
+              dropoffCity,
+              dropoffCounty,
+              dropoffState,
+              dropoffPostalCode,
+              scheduledPickupAt,
+              scheduledDropoffAt,
+              estimatedMiles,
+              updatedById: userId,
+            },
+          })
+        : prisma.tripLeg.create({
+            data: {
+              organizationId,
+              rideRequestId: request.id,
+              dropoffDestinationId: destinationId,
+              sequence: 1,
+              status: "READY_TO_ASSIGN",
+              pickupAddress,
+              pickupCity,
+              pickupCounty,
+              pickupState,
+              pickupPostalCode,
+              dropoffAddress,
+              dropoffCity,
+              dropoffCounty,
+              dropoffState,
+              dropoffPostalCode,
+              scheduledPickupAt,
+              scheduledDropoffAt,
+              estimatedMiles,
+              notes: noteKey,
+              createdById: userId,
+              updatedById: userId,
+            },
+          })
+  );
+
+  await prisma.assignment.deleteMany({
+    where: { organizationId, tripLegId: tripLeg.id },
+  });
 }
 
 function getCentralStartOfToday() {
