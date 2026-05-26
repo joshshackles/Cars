@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -675,26 +676,40 @@ fun MobileHeader(session: MobileSession, profile: MobileProfile?, onLogout: () -
         Modifier
             .fillMaxWidth()
             .background(CarsColors.Navy)
-            .safeDrawingPadding()
-            .padding(18.dp),
+            .statusBarsPadding()
+            .padding(start = 14.dp, top = 8.dp, end = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Image(
             painter = painterResource(R.drawable.cars_logo),
             contentDescription = "CARS",
-            modifier = Modifier.size(54.dp)
+            modifier = Modifier.size(42.dp)
         )
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text("CARS Mobile", color = CarsColors.PaleBlue, fontWeight = FontWeight.Bold)
-            Text(profile?.user?.name ?: session.user.name, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(session.organization.name, color = CarsColors.PaleBlue, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text("CARS Mobile", color = CarsColors.PaleBlue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text(profile?.user?.name ?: session.user.name, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(session.organization.name, color = CarsColors.PaleBlue, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        TextButton(onClick = onLogout) {
-            Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, tint = Color.White)
-            Spacer(Modifier.width(6.dp))
-            Text("Sign out", color = Color.White)
+        CompactHeaderAction(onClick = onLogout, label = "Sign out") {
+            Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
         }
+    }
+}
+
+@Composable
+fun CompactHeaderAction(
+    onClick: () -> Unit,
+    label: String,
+    icon: @Composable () -> Unit
+) {
+    TextButton(
+        onClick = onClick,
+        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+    ) {
+        icon()
+        Spacer(Modifier.width(4.dp))
+        Text(label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
 
@@ -2045,30 +2060,26 @@ fun DriverDashboard(
             Modifier
                 .fillMaxWidth()
                 .background(CarsColors.Navy)
-                .safeDrawingPadding()
-                .padding(18.dp),
+                .statusBarsPadding()
+                .padding(start = 14.dp, top = 8.dp, end = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Image(
                 painter = painterResource(R.drawable.cars_logo),
                 contentDescription = "CARS Driver",
-                modifier = Modifier.size(52.dp)
+                modifier = Modifier.size(40.dp)
             )
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text("CARS Driver", color = CarsColors.PaleBlue, fontWeight = FontWeight.Bold)
-                Text(session.driver?.name.orEmpty(), color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(session.organization.name, color = CarsColors.PaleBlue, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text("CARS Driver", color = CarsColors.PaleBlue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(session.driver?.name.orEmpty(), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(session.organization.name, color = CarsColors.PaleBlue, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            TextButton(onClick = onBackHome) {
-                Icon(Icons.Default.Home, contentDescription = null, tint = Color.White)
-                Spacer(Modifier.width(6.dp))
-                Text("Home", color = Color.White)
+            CompactHeaderAction(onClick = onBackHome, label = "Home") {
+                Icon(Icons.Default.Home, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
             }
-            TextButton(onClick = onLogout) {
-                Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, tint = Color.White)
-                Spacer(Modifier.width(6.dp))
-                Text("Sign out", color = Color.White)
+            CompactHeaderAction(onClick = onLogout, label = "Sign out") {
+                Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
             }
         }
 
