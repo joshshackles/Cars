@@ -603,8 +603,31 @@ fun MobileHomeScaffold(
     onAddAvailability: (DriverAvailabilityPayload) -> Unit,
     onSubmitSupportRequest: (DriverSupportRequest) -> Unit
 ) {
-    Column(Modifier.fillMaxSize()) {
-        MobileHeader(session = session, profile = profile, onLogout = onLogout)
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val showDriverDrawer = session.driver != null
+    val callCars = { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse(CarsProgramConfig.DispatchPhoneUri))) }
+
+    BackHandler(enabled = showDriverDrawer && drawerState.isOpen) {
+        scope.launch { drawerState.close() }
+    }
+
+    fun drawerAction(action: () -> Unit) {
+        scope.launch {
+            drawerState.close()
+            action()
+        }
+    }
+
+    val content: @Composable () -> Unit = {
+        Column(Modifier.fillMaxSize()) {
+            MobileHeader(
+                session = session,
+                profile = profile,
+                onLogout = onLogout,
+                onOpenMenu = if (showDriverDrawer) ({ scope.launch { drawerState.open() } }) else null
+            )
         when (screen) {
             MobileScreen.Profile -> ProfileForm(profile = profile, session = session, busy = busy, error = error, onSave = onSaveProfile, onBack = onBack)
             MobileScreen.RideRequest -> RideRequestForm(profile = profile, busy = busy, error = error, onSubmit = onRequestRide, onBack = onBack)
@@ -679,10 +702,39 @@ fun MobileHomeScaffold(
             )
         }
     }
+    }
+
+    if (showDriverDrawer) {
+        ModalNavigationDrawer(
+            drawerState = drawerState,
+            drawerContent = {
+                DriverSideDrawer(
+                    session = session,
+                    onDashboard = { drawerAction { onNavigate(MobileScreen.DriverDashboard) } },
+                    onHome = { drawerAction { onNavigate(MobileScreen.Home) } },
+                    onManifest = { drawerAction { onNavigate(MobileScreen.DriverDashboard) } },
+                    onAvailability = { drawerAction { onNavigate(MobileScreen.DriverAvailability) } },
+                    onVehicle = { drawerAction { onNavigate(MobileScreen.DriverVehicle) } },
+                    onRides = { drawerAction { onNavigate(MobileScreen.DriverRides) } },
+                    onMileage = { drawerAction { onNavigate(MobileScreen.DriverMileage) } },
+                    onPay = { drawerAction { onNavigate(MobileScreen.DriverReimbursements) } },
+                    onRequestHelp = { drawerAction { onNavigate(MobileScreen.DriverHelp) } },
+                    onProfile = { drawerAction { onNavigate(MobileScreen.Profile) } },
+                    onSupport = { drawerAction { onNavigate(MobileScreen.DriverSupport) } },
+                    onSettings = { drawerAction { onNavigate(MobileScreen.DriverSettings) } },
+                    onCallCars = { drawerAction(callCars) },
+                    onLogout = { drawerAction(onLogout) },
+                )
+            },
+            content = content
+        )
+    } else {
+        content()
+    }
 }
 
 @Composable
-fun MobileHeader(session: MobileSession, profile: MobileProfile?, onLogout: () -> Unit) {
+fun MobileHeader(session: MobileSession, profile: MobileProfile?, onLogout: () -> Unit, onOpenMenu: (() -> Unit)? = null) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -691,6 +743,12 @@ fun MobileHeader(session: MobileSession, profile: MobileProfile?, onLogout: () -
             .padding(start = 14.dp, top = 8.dp, end = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (onOpenMenu != null) {
+            CompactHeaderAction(onClick = onOpenMenu, label = "Menu") {
+                Icon(Icons.Default.Menu, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+            }
+            Spacer(Modifier.width(4.dp))
+        }
         Image(
             painter = painterResource(R.drawable.cars_logo),
             contentDescription = "CARS",
