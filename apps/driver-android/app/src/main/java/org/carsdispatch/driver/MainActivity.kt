@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
@@ -53,13 +54,19 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -2039,11 +2046,14 @@ fun DriverDashboard(
     onCompleteTracking: (ManifestAssignment) -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
     var selectedAssignmentId by remember { mutableStateOf<String?>(null) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) {}
     val selectedAssignment = manifest?.assignments?.firstOrNull { it.id == selectedAssignmentId }
+    val callCars = { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse(CarsProgramConfig.DispatchPhoneUri))) }
 
     LaunchedEffect(Unit) {
         if (!hasLocationPermission(context)) {
@@ -2055,97 +2065,242 @@ fun DriverDashboard(
         selectedAssignmentId = null
     }
 
-    Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(CarsColors.Navy)
-                .statusBarsPadding()
-                .padding(start = 14.dp, top = 8.dp, end = 10.dp, bottom = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Image(
-                painter = painterResource(R.drawable.cars_logo),
-                contentDescription = "CARS Driver",
-                modifier = Modifier.size(40.dp)
-            )
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text("CARS Driver", color = CarsColors.PaleBlue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Text(session.driver?.name.orEmpty(), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(session.organization.name, color = CarsColors.PaleBlue, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            CompactHeaderAction(onClick = onBackHome, label = "Home") {
-                Icon(Icons.Default.Home, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-            }
-            CompactHeaderAction(onClick = onLogout, label = "Sign out") {
-                Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-            }
-        }
+    BackHandler(enabled = selectedAssignmentId == null && drawerState.isOpen) {
+        scope.launch { drawerState.close() }
+    }
 
-        if (selectedAssignment != null) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 72.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                item {
-                    OutlinedButton(onClick = { selectedAssignmentId = null }, modifier = Modifier.fillMaxWidth()) {
-                        Text("Back to manifest")
-                    }
-                }
-                item {
-                    TripCard(
-                        assignment = selectedAssignment,
-                        activeTracking = activeTracking,
-                        onOpenRoute = {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(selectedAssignment.routeUrl())))
-                        },
-                        onCallRider = {
-                            selectedAssignment.tripLeg.rideRequest.rider.phone?.let {
-                                context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$it")))
-                            }
-                        },
-                        onAccept = { onAction("accept") { it.acceptAssignment(selectedAssignment.id) } },
-                        onDecline = { reason -> onAction("decline") { it.declineAssignment(selectedAssignment.id, reason) } },
-                        onStart = { onStartTracking(selectedAssignment) },
-                        onArrived = {
-                            onAction("arrived") {
-                                it.arrived(selectedAssignment.id, DriverLocationClient(context.applicationContext).currentLocation())
-                            }
-                        },
-                        onComplete = { onCompleteTracking(selectedAssignment) },
-                        onReportIssue = { summary, details ->
-                            onAction("issue") { it.reportIssue(selectedAssignment.id, summary, details) }
-                        }
-                    )
-                }
-            }
-        } else {
-            ManifestList(
-                manifest = manifest,
-                availableRides = availableRides,
-                driverTools = driverTools,
-                busy = busy,
-                error = error,
-                dashboardMessage = dashboardMessage,
-                onRefresh = onRefresh,
-                onOpenDashboard = { },
-                onAvailability = onAvailability,
-                onVehicle = onVehicle,
-                onRides = onRides,
-                onMileage = onMileage,
-                onPay = onPay,
-                onOpenSettings = onOpenSettings,
-                onProfile = onProfile,
-                onSupport = onSupport,
-                onCallCars = { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse(CarsProgramConfig.DispatchPhoneUri))) },
-                onAcceptAvailableRide = onAcceptAvailableRide,
-                onDenyAvailableRide = onDenyAvailableRide,
-                onSelectAssignment = { selectedAssignmentId = it.id }
-            )
+    fun drawerAction(action: () -> Unit) {
+        scope.launch {
+            drawerState.close()
+            action()
         }
     }
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            DriverSideDrawer(
+                session = session,
+                onDashboard = { drawerAction { selectedAssignmentId = null } },
+                onHome = { drawerAction(onBackHome) },
+                onManifest = { drawerAction { selectedAssignmentId = null } },
+                onAvailability = { drawerAction(onAvailability) },
+                onVehicle = { drawerAction(onVehicle) },
+                onRides = { drawerAction(onRides) },
+                onMileage = { drawerAction(onMileage) },
+                onPay = { drawerAction(onPay) },
+                onRequestHelp = { drawerAction(onSupport) },
+                onProfile = { drawerAction(onProfile) },
+                onSupport = { drawerAction(onSupport) },
+                onSettings = { drawerAction(onOpenSettings) },
+                onCallCars = { drawerAction(callCars) },
+                onLogout = { drawerAction(onLogout) },
+            )
+        }
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(CarsColors.Navy)
+                    .statusBarsPadding()
+                    .padding(start = 8.dp, top = 8.dp, end = 10.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CompactHeaderAction(onClick = { scope.launch { drawerState.open() } }, label = "Menu") {
+                    Icon(Icons.Default.Menu, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                }
+                Spacer(Modifier.width(4.dp))
+                Image(
+                    painter = painterResource(R.drawable.cars_logo),
+                    contentDescription = "CARS Driver",
+                    modifier = Modifier.size(38.dp)
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("CARS Driver", color = CarsColors.PaleBlue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(session.driver?.name.orEmpty(), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(session.organization.name, color = CarsColors.PaleBlue, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                CompactHeaderAction(onClick = onLogout, label = "Sign out") {
+                    Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                }
+            }
+
+            if (selectedAssignment != null) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 72.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    item {
+                        OutlinedButton(onClick = { selectedAssignmentId = null }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Back to manifest")
+                        }
+                    }
+                    item {
+                        TripCard(
+                            assignment = selectedAssignment,
+                            activeTracking = activeTracking,
+                            onOpenRoute = {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(selectedAssignment.routeUrl())))
+                            },
+                            onCallRider = {
+                                selectedAssignment.tripLeg.rideRequest.rider.phone?.let {
+                                    context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$it")))
+                                }
+                            },
+                            onAccept = { onAction("accept") { it.acceptAssignment(selectedAssignment.id) } },
+                            onDecline = { reason -> onAction("decline") { it.declineAssignment(selectedAssignment.id, reason) } },
+                            onStart = { onStartTracking(selectedAssignment) },
+                            onArrived = {
+                                onAction("arrived") {
+                                    it.arrived(selectedAssignment.id, DriverLocationClient(context.applicationContext).currentLocation())
+                                }
+                            },
+                            onComplete = { onCompleteTracking(selectedAssignment) },
+                            onReportIssue = { summary, details ->
+                                onAction("issue") { it.reportIssue(selectedAssignment.id, summary, details) }
+                            }
+                        )
+                    }
+                }
+            } else {
+                ManifestList(
+                    manifest = manifest,
+                    availableRides = availableRides,
+                    driverTools = driverTools,
+                    busy = busy,
+                    error = error,
+                    dashboardMessage = dashboardMessage,
+                    onRefresh = onRefresh,
+                    onOpenDashboard = { },
+                    onAvailability = onAvailability,
+                    onVehicle = onVehicle,
+                    onRides = onRides,
+                    onMileage = onMileage,
+                    onPay = onPay,
+                    onOpenSettings = onOpenSettings,
+                    onProfile = onProfile,
+                    onSupport = onSupport,
+                    onCallCars = callCars,
+                    onAcceptAvailableRide = onAcceptAvailableRide,
+                    onDenyAvailableRide = onDenyAvailableRide,
+                    onSelectAssignment = { selectedAssignmentId = it.id }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun DriverSideDrawer(
+    session: MobileSession,
+    onDashboard: () -> Unit,
+    onHome: () -> Unit,
+    onManifest: () -> Unit,
+    onAvailability: () -> Unit,
+    onVehicle: () -> Unit,
+    onRides: () -> Unit,
+    onMileage: () -> Unit,
+    onPay: () -> Unit,
+    onRequestHelp: () -> Unit,
+    onProfile: () -> Unit,
+    onSupport: () -> Unit,
+    onSettings: () -> Unit,
+    onCallCars: () -> Unit,
+    onLogout: () -> Unit
+) {
+    ModalDrawerSheet(
+        drawerContainerColor = Color.White,
+        modifier = Modifier.width(304.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Image(
+                    painter = painterResource(R.drawable.cars_logo),
+                    contentDescription = "CARS",
+                    modifier = Modifier.size(52.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("CARS Mobile", color = CarsColors.Navy, fontWeight = FontWeight.Black)
+                    Text(session.driver?.name ?: session.user.name, color = CarsColors.Ink, fontSize = 20.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(session.organization.name, color = CarsColors.Muted, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider()
+            DrawerSectionLabel("Today")
+            DriverDrawerItem("Dashboard", "Ride offers and upcoming rides", Icons.Default.Home, onDashboard)
+            DriverDrawerItem("Manifest", "Accepted trips and trip actions", Icons.Default.DirectionsCar, onManifest)
+            DriverDrawerItem("Availability", "Set when you can drive", Icons.Default.Event, onAvailability)
+
+            DrawerSectionLabel("Driver cabinet")
+            DriverDrawerItem("Vehicle", "Vehicle, insurance, and odometer", Icons.Default.DirectionsCar, onVehicle)
+            DriverDrawerItem("Rides", "Upcoming and past rides", Icons.Default.Navigation, onRides)
+            DriverDrawerItem("Mileage", "GPS points and mileage records", Icons.Default.LocationOn, onMileage)
+            DriverDrawerItem("Pay & reimbursements", "Pending, approved, and paid mileage", Icons.Default.CheckCircle, onPay)
+            DriverDrawerItem("Profile", "Contact and driver information", Icons.Default.Person, onProfile)
+            DriverDrawerItem("Settings", "GPS, notifications, and app preferences", Icons.Default.Settings, onSettings)
+
+            DrawerSectionLabel("Help")
+            DriverDrawerItem("Request help", "Send dispatch a non-emergency issue", Icons.Default.ReportProblem, onRequestHelp)
+            DriverDrawerItem("Support", "Help topics and CARS contact info", Icons.Default.Call, onSupport)
+            DriverDrawerItem("Call CARS dispatch", CarsProgramConfig.DispatchPhoneDisplay, Icons.Default.Call, onCallCars, emphasize = true)
+
+            Spacer(Modifier.height(4.dp))
+            HorizontalDivider()
+            DriverDrawerItem("Public home", "Return to the app home screen", Icons.Default.Home, onHome)
+            DriverDrawerItem("Sign out", "End this mobile session", Icons.AutoMirrored.Filled.Logout, onLogout, emphasize = true)
+        }
+    }
+}
+
+@Composable
+fun DrawerSectionLabel(label: String) {
+    Text(
+        label.uppercase(),
+        color = CarsColors.Muted,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Black,
+        modifier = Modifier.padding(top = 12.dp, bottom = 2.dp)
+    )
+}
+
+@Composable
+fun DriverDrawerItem(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+    emphasize: Boolean = false
+) {
+    NavigationDrawerItem(
+        selected = false,
+        onClick = onClick,
+        icon = {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (emphasize) CarsColors.Red else CarsColors.Navy,
+                modifier = Modifier.size(24.dp)
+            )
+        },
+        label = {
+            Column {
+                Text(title, color = if (emphasize) CarsColors.Red else CarsColors.Navy, fontWeight = FontWeight.Black)
+                Text(subtitle, color = CarsColors.Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    )
 }
 
 @Composable
