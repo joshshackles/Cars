@@ -148,6 +148,10 @@ fun CarsDriverApp() {
         screen = nextScreen
     }
 
+    fun defaultSignedInScreen(nextSession: MobileSession?): MobileScreen {
+        return if (nextSession?.driver != null) MobileScreen.DriverDashboard else MobileScreen.Home
+    }
+
     fun navigateTo(nextScreen: MobileScreen) {
         if (screen == nextScreen) return
         backStack = backStack + screen
@@ -160,7 +164,7 @@ fun CarsDriverApp() {
             backStack = backStack.dropLast(1)
             screen = previous
         } else {
-            screen = if (session == null) MobileScreen.PublicHome else MobileScreen.Home
+            screen = if (session == null) MobileScreen.PublicHome else defaultSignedInScreen(session)
         }
     }
 
@@ -209,7 +213,7 @@ fun CarsDriverApp() {
         val stored = sessionStore.load()
         session = stored
         if (stored != null) {
-            resetTo(MobileScreen.Home)
+            resetTo(defaultSignedInScreen(stored))
             busy = true
             runCatching { CarsApi { stored.token }.manifest(LocalDate.now().toString()) }
                 .onSuccess { manifest = it }
@@ -240,7 +244,7 @@ fun CarsDriverApp() {
     CarsTheme {
         Surface(color = CarsColors.Soft, modifier = Modifier.fillMaxSize()) {
             val currentSession = session
-            BackHandler(enabled = screen != MobileScreen.PublicHome && screen != MobileScreen.Home) {
+            BackHandler(enabled = screen != MobileScreen.PublicHome && screen != defaultSignedInScreen(currentSession)) {
                 goBack()
             }
             if (currentSession == null && screen == MobileScreen.PublicHome) {
@@ -258,7 +262,7 @@ fun CarsDriverApp() {
                                 val nextApi = CarsApi { nextSession.token }
                                 sessionStore.save(nextSession)
                                 session = nextSession
-                                resetTo(MobileScreen.Home)
+                                resetTo(defaultSignedInScreen(nextSession))
 
                                 runCatching { nextApi.profile() }
                                     .onSuccess { profile = it }
