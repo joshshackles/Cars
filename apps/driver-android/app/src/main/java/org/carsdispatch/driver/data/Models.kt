@@ -93,6 +93,46 @@ data class ManifestResponse(
 )
 
 @Serializable
+data class AvailableRidesResponse(
+    val generatedAt: String,
+    val availability: DriverAvailabilitySummary? = null,
+    val matchingRequests: List<AvailableRideRequest> = emptyList()
+)
+
+@Serializable
+data class AvailableRideRequest(
+    val id: String,
+    val tripLegId: String,
+    val rideRequestId: String,
+    val riderName: String,
+    val riderInitials: String,
+    val scheduledPickupAt: String,
+    val scheduledDropoffAt: String? = null,
+    val purpose: String,
+    val pickupAddress: String? = null,
+    val pickupCity: String? = null,
+    val pickupCounty: String? = null,
+    val pickupState: String? = null,
+    val pickupPostalCode: String? = null,
+    val destinationName: String? = null,
+    val dropoffAddress: String? = null,
+    val dropoffCity: String? = null,
+    val dropoffCounty: String? = null,
+    val dropoffState: String? = null,
+    val dropoffPostalCode: String? = null,
+    val estimatedDistanceMiles: String? = null,
+    val estimatedDurationMinutes: Int? = null,
+    val matchLabel: String = "Matches your availability"
+)
+
+@Serializable
+data class AvailableRideActionResult(
+    val assignmentId: String? = null,
+    val tripLegId: String,
+    val status: String
+)
+
+@Serializable
 data class ManifestAssignment(
     val id: String,
     val status: String,

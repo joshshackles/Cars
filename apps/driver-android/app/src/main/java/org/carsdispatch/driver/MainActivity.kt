@@ -80,7 +80,10 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.carsdispatch.driver.data.CarsApi
+import org.carsdispatch.driver.data.AvailableRideRequest
+import org.carsdispatch.driver.data.AvailableRidesResponse
 import org.carsdispatch.driver.data.DriverAvailabilityPayload
+import org.carsdispatch.driver.data.DriverAvailabilitySummary
 import org.carsdispatch.driver.data.DriverInfoUpdatePayload
 import org.carsdispatch.driver.data.DriverRideSummary
 import org.carsdispatch.driver.data.DriverSupportRequest
@@ -92,6 +95,7 @@ import org.carsdispatch.driver.data.MobileProfile
 import org.carsdispatch.driver.data.ProfileUpdatePayload
 import org.carsdispatch.driver.data.RideRequestPayload
 import org.carsdispatch.driver.data.MobileSession
+import org.carsdispatch.driver.data.RiderSummary
 import org.carsdispatch.driver.data.SessionStore
 import org.carsdispatch.driver.location.DriverLocationClient
 import java.net.URLEncoder
@@ -118,8 +122,10 @@ fun CarsDriverApp() {
     var profile by remember { mutableStateOf<MobileProfile?>(null) }
     var manifest by remember { mutableStateOf<ManifestResponse?>(null) }
     var driverTools by remember { mutableStateOf<DriverToolsResponse?>(null) }
+    var availableRides by remember { mutableStateOf<AvailableRidesResponse?>(null) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var dashboardMessage by remember { mutableStateOf<String?>(null) }
     var supportMessage by remember { mutableStateOf<String?>(null) }
     var screen by remember { mutableStateOf(MobileScreen.PublicHome) }
     var backStack by remember { mutableStateOf<List<MobileScreen>>(emptyList()) }
@@ -182,6 +188,15 @@ fun CarsDriverApp() {
         }
     }
 
+    fun refreshAvailableRides() {
+        if (session?.driver == null) return
+        scope.launch {
+            runCatching { api.availableRides() }
+                .onSuccess { availableRides = it }
+                .onFailure { error = it.message }
+        }
+    }
+
     LaunchedEffect(Unit) {
         val stored = sessionStore.load()
         session = stored
@@ -207,6 +222,8 @@ fun CarsDriverApp() {
             if (stored.driver != null) {
                 runCatching { CarsApi { stored.token }.driverTools() }
                     .onSuccess { driverTools = it }
+                runCatching { CarsApi { stored.token }.availableRides() }
+                    .onSuccess { availableRides = it }
             }
             busy = false
         }
@@ -244,6 +261,8 @@ fun CarsDriverApp() {
 
                                     runCatching { nextApi.driverTools() }
                                         .onSuccess { driverTools = it }
+                                    runCatching { nextApi.availableRides() }
+                                        .onSuccess { availableRides = it }
                                 }
                             }
                                 .onFailure {
@@ -257,16 +276,22 @@ fun CarsDriverApp() {
                 DriverDashboard(
                     session = currentSession,
                     manifest = manifest,
+                    availableRides = availableRides,
+                    driverTools = driverTools,
                     busy = busy,
                     error = error,
+                    dashboardMessage = dashboardMessage,
                     activeTracking = activeTracking,
-                    onRefresh = ::refreshManifest,
+                    onRefresh = {
+                        refreshManifest()
+                        refreshDriverTools()
+                        refreshAvailableRides()
+                    },
                     onBackHome = { resetTo(MobileScreen.Home) },
                     onOpenSettings = {
                         driverCabinetSection = DriverCabinetSections.DriverInfo
                         navigateTo(MobileScreen.DriverSettings)
                     },
-                    onRequestRide = { navigateTo(MobileScreen.DriverHelp) },
                     onProfile = { navigateTo(MobileScreen.Profile) },
                     onAvailability = { navigateTo(MobileScreen.DriverAvailability) },
                     onVehicle = { navigateTo(MobileScreen.DriverVehicle) },
@@ -283,8 +308,39 @@ fun CarsDriverApp() {
                             profile = null
                             manifest = null
                             driverTools = null
+                            availableRides = null
                             activeTracking = null
                             resetTo(MobileScreen.PublicHome)
+                        }
+                    },
+                    onAcceptAvailableRide = { ride ->
+                        scope.launch {
+                            busy = true
+                            error = null
+                            dashboardMessage = null
+                            runCatching { api.acceptAvailableRide(ride.tripLegId) }
+                                .onSuccess { dashboardMessage = "Ride accepted. It moved to your upcoming rides." }
+                                .onFailure { error = it.message }
+                            runCatching { api.manifest(LocalDate.now().toString()) }
+                                .onSuccess { manifest = it }
+                            runCatching { api.driverTools() }
+                                .onSuccess { driverTools = it }
+                            runCatching { api.availableRides() }
+                                .onSuccess { availableRides = it }
+                            busy = false
+                        }
+                    },
+                    onDenyAvailableRide = { ride ->
+                        scope.launch {
+                            busy = true
+                            error = null
+                            dashboardMessage = null
+                            runCatching { api.denyAvailableRide(ride.tripLegId, "Driver denied from mobile dashboard.") }
+                                .onSuccess { dashboardMessage = "Ride hidden from your available requests." }
+                                .onFailure { error = it.message }
+                            runCatching { api.availableRides() }
+                                .onSuccess { availableRides = it }
+                            busy = false
                         }
                     },
                     onAction = { _, action ->
@@ -360,6 +416,7 @@ fun CarsDriverApp() {
                             profile = null
                             manifest = null
                             driverTools = null
+                            availableRides = null
                             activeTracking = null
                             resetTo(MobileScreen.PublicHome)
                         }
@@ -1943,13 +2000,15 @@ fun RideDetailSummaryCard(ride: DriverRideSummary) {
 fun DriverDashboard(
     session: MobileSession,
     manifest: ManifestResponse?,
+    availableRides: AvailableRidesResponse?,
+    driverTools: DriverToolsResponse?,
     busy: Boolean,
     error: String?,
+    dashboardMessage: String?,
     activeTracking: TrackingState?,
     onRefresh: () -> Unit,
     onBackHome: () -> Unit,
     onOpenSettings: () -> Unit,
-    onRequestRide: () -> Unit,
     onProfile: () -> Unit,
     onAvailability: () -> Unit,
     onVehicle: () -> Unit,
@@ -1958,6 +2017,8 @@ fun DriverDashboard(
     onPay: () -> Unit,
     onSupport: () -> Unit,
     onLogout: () -> Unit,
+    onAcceptAvailableRide: (AvailableRideRequest) -> Unit,
+    onDenyAvailableRide: (AvailableRideRequest) -> Unit,
     onAction: (String, suspend (CarsApi) -> Unit) -> Unit,
     onStartTracking: (ManifestAssignment) -> Unit,
     onCompleteTracking: (ManifestAssignment) -> Unit
@@ -2052,9 +2113,11 @@ fun DriverDashboard(
         } else {
             ManifestList(
                 manifest = manifest,
-                activeTracking = activeTracking,
+                availableRides = availableRides,
+                driverTools = driverTools,
                 busy = busy,
                 error = error,
+                dashboardMessage = dashboardMessage,
                 onRefresh = onRefresh,
                 onOpenDashboard = { },
                 onAvailability = onAvailability,
@@ -2063,10 +2126,11 @@ fun DriverDashboard(
                 onMileage = onMileage,
                 onPay = onPay,
                 onOpenSettings = onOpenSettings,
-                onRequestRide = onRequestRide,
                 onProfile = onProfile,
                 onSupport = onSupport,
                 onCallCars = { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse(CarsProgramConfig.DispatchPhoneUri))) },
+                onAcceptAvailableRide = onAcceptAvailableRide,
+                onDenyAvailableRide = onDenyAvailableRide,
                 onSelectAssignment = { selectedAssignmentId = it.id }
             )
         }
@@ -2076,9 +2140,11 @@ fun DriverDashboard(
 @Composable
 fun ManifestList(
     manifest: ManifestResponse?,
-    activeTracking: TrackingState?,
+    availableRides: AvailableRidesResponse?,
+    driverTools: DriverToolsResponse?,
     busy: Boolean,
     error: String?,
+    dashboardMessage: String?,
     onRefresh: () -> Unit,
     onOpenDashboard: () -> Unit,
     onAvailability: () -> Unit,
@@ -2087,10 +2153,11 @@ fun ManifestList(
     onMileage: () -> Unit,
     onPay: () -> Unit,
     onOpenSettings: () -> Unit,
-    onRequestRide: () -> Unit,
     onProfile: () -> Unit,
     onSupport: () -> Unit,
     onCallCars: () -> Unit,
+    onAcceptAvailableRide: (AvailableRideRequest) -> Unit,
+    onDenyAvailableRide: (AvailableRideRequest) -> Unit,
     onSelectAssignment: (ManifestAssignment) -> Unit
 ) {
     val assignments = manifest?.assignments.orEmpty()
@@ -2108,64 +2175,345 @@ fun ManifestList(
     val upcomingAssignments = assignments.filter {
         it !in exceptionAssignments && it !in completedAssignments && it !in activeAssignments
     }
+    val upcomingRides = driverTools?.upcomingRides.orEmpty()
+    val availableRequests = availableRides?.matchingRequests.orEmpty()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 72.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        item { DashboardGreetingCard() }
-        item { SummaryCard(manifest, activeTracking, busy, error, onRefresh) }
-        if (assignments.isEmpty()) {
-            item { EmptyManifestCard() }
-        } else {
-            item { SectionHeader("Upcoming trips", upcomingAssignments.size) }
-            if (upcomingAssignments.isEmpty()) {
-                item { SectionEmpty("No upcoming trips left on today's manifest.") }
-            } else {
-                items(upcomingAssignments, key = { it.id }) { assignment ->
-                    TripListItem(assignment = assignment, onOpen = { onSelectAssignment(assignment) })
-                }
-            }
-
-            item { SectionHeader("Active trips", activeAssignments.size) }
-            if (activeAssignments.isEmpty()) {
-                item { SectionEmpty("No trips are currently in progress.") }
-            } else {
-                items(activeAssignments, key = { it.id }) { assignment ->
-                    TripListItem(assignment = assignment, onOpen = { onSelectAssignment(assignment) })
-                }
-            }
-            item { SectionHeader("Completed trips", completedAssignments.size) }
-            if (completedAssignments.isEmpty()) {
-                item { SectionEmpty("Completed rides will appear here as the day moves along.") }
-            } else {
-                items(completedAssignments, key = { it.id }) { assignment ->
-                    TripListItem(assignment = assignment, onOpen = { onSelectAssignment(assignment) })
-                }
-            }
-            if (exceptionAssignments.isNotEmpty()) {
-                item { SectionHeader("Canceled or no-show", exceptionAssignments.size) }
-                items(exceptionAssignments, key = { it.id }) { assignment ->
-                    TripListItem(assignment = assignment, onOpen = { onSelectAssignment(assignment) })
-                }
-            }
-        }
         item {
-            DriverDashboardQuickActions(
-                onOpenDashboard = onOpenDashboard,
-                onAvailability = onAvailability,
-                onVehicle = onVehicle,
-                onRides = onRides,
-                onMileage = onMileage,
-                onPay = onPay,
-                onRequestRide = onRequestRide,
-                onProfile = onProfile,
-                onOpenSettings = onOpenSettings,
-                onSupport = onSupport
+            AvailabilitySummaryCard(
+                availability = availableRides?.availability,
+                requestCount = availableRequests.size,
+                upcomingCount = upcomingRides.size + upcomingAssignments.size,
+                busy = busy,
+                error = error,
+                message = dashboardMessage,
+                onRefresh = onRefresh,
+                onOpenAvailability = onAvailability
             )
         }
-        item { DriverHelpCard(onCallCars = onCallCars) }
+
+        item { SectionHeader("Ride requests that fit your availability", availableRequests.size) }
+        if (availableRides?.availability == null) {
+            item {
+                ActionEmptyCard(
+                    title = "Set your availability to start receiving matching ride requests.",
+                    actionLabel = "Open Availability",
+                    onAction = onAvailability
+                )
+            }
+        } else if (availableRequests.isEmpty()) {
+            item { SectionEmpty("No ride requests currently match your availability.") }
+        } else {
+            items(availableRequests, key = { it.tripLegId }) { request ->
+                RideRequestOfferCard(
+                    request = request,
+                    busy = busy,
+                    onAccept = { onAcceptAvailableRide(request) },
+                    onDeny = { onDenyAvailableRide(request) }
+                )
+            }
+        }
+
+        item { SectionHeader("Upcoming rides", upcomingRides.size + upcomingAssignments.size) }
+        if (upcomingRides.isEmpty() && upcomingAssignments.isEmpty()) {
+            item { SectionEmpty("You do not have any upcoming accepted rides.") }
+        } else {
+            items(upcomingAssignments, key = { "assignment-${it.id}" }) { assignment ->
+                UpcomingAssignmentCard(
+                    assignment = assignment,
+                    onOpen = { onSelectAssignment(assignment) },
+                )
+            }
+            items(upcomingRides, key = { "ride-${it.id}" }) { ride ->
+                UpcomingRideCard(ride = ride, onOpen = onRides)
+            }
+        }
+
+        if (activeAssignments.isNotEmpty()) {
+            item { SectionHeader("Active trips", activeAssignments.size) }
+            items(activeAssignments, key = { it.id }) { assignment ->
+                TripListItem(assignment = assignment, onOpen = { onSelectAssignment(assignment) })
+            }
+        }
+
+        item {
+            DriverToolsSettingsPanel(
+                onManifest = onOpenDashboard,
+                onAvailability = onAvailability,
+                onVehicle = onVehicle,
+                onMileage = onMileage,
+                onPay = onPay,
+                onProfile = onProfile,
+                onSupport = onSupport,
+                onSettings = onOpenSettings,
+                onCallCars = onCallCars
+            )
+        }
+    }
+}
+
+@Composable
+fun AvailabilitySummaryCard(
+    availability: DriverAvailabilitySummary?,
+    requestCount: Int,
+    upcomingCount: Int,
+    busy: Boolean,
+    error: String?,
+    message: String?,
+    onRefresh: () -> Unit,
+    onOpenAvailability: () -> Unit
+) {
+    Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        if (availability == null) "Availability needed" else "Available today",
+                        color = CarsColors.Navy,
+                        fontSize = 21.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                    Text(
+                        availability?.availabilityWindowLabel() ?: "Set your schedule to receive ride requests.",
+                        color = CarsColors.Muted
+                    )
+                }
+                TextButton(onClick = onRefresh, enabled = !busy) {
+                    if (busy) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Default.Refresh, contentDescription = null, tint = CarsColors.Navy)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Refresh", color = CarsColors.Navy, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                MiniMetric(Icons.Default.CheckCircle, "Status", if (availability == null) "Set" else "Yes", Modifier.weight(1f))
+                MiniMetric(Icons.Default.Person, "Requests", requestCount.toString(), Modifier.weight(1f))
+                MiniMetric(Icons.Default.Event, "Upcoming", upcomingCount.toString(), Modifier.weight(1f))
+            }
+            if (availability == null) {
+                PrimaryButton("Open Availability", busy = false, onClick = onOpenAvailability)
+            }
+            message?.let { Text(it, color = CarsColors.Success, fontWeight = FontWeight.Bold) }
+            if (error != null) ErrorText(error)
+        }
+    }
+}
+
+@Composable
+fun ActionEmptyCard(title: String, actionLabel: String, onAction: () -> Unit) {
+    Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(title, color = CarsColors.Navy, fontSize = 18.sp, fontWeight = FontWeight.Black)
+            OutlinedButton(onClick = onAction, modifier = Modifier.fillMaxWidth()) {
+                Text(actionLabel)
+            }
+        }
+    }
+}
+
+@Composable
+fun RideRequestOfferCard(
+    request: AvailableRideRequest,
+    busy: Boolean,
+    onAccept: () -> Unit,
+    onDeny: () -> Unit
+) {
+    Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(verticalAlignment = Alignment.Top) {
+                Text(
+                    request.riderInitials.ifBlank { "R" },
+                    color = CarsColors.Navy,
+                    fontWeight = FontWeight.Black,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .size(56.dp)
+                        .background(CarsColors.PaleBlue, RoundedCornerShape(999.dp))
+                        .padding(top = 16.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(request.riderName, color = CarsColors.Ink, fontSize = 21.sp, fontWeight = FontWeight.Black)
+                    Text(request.purpose.prettyLabel(), color = CarsColors.Navy, fontWeight = FontWeight.Bold)
+                    Text(request.pickupAddress.fullAddress(request.pickupCity, request.pickupState, request.pickupPostalCode), color = CarsColors.Ink, fontWeight = FontWeight.Bold)
+                    Text(request.destinationLine(), color = CarsColors.Muted)
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(formatTime(request.scheduledPickupAt), color = CarsColors.Ink, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                    Text(request.scheduledPickupAt.shortDayLabel(), color = CarsColors.Muted)
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                request.estimatedDurationMinutes?.let {
+                    CompactInfo(Icons.Default.Event, "$it min", Modifier.weight(1f))
+                }
+                request.estimatedDistanceMiles?.let {
+                    CompactInfo(Icons.Default.Navigation, "$it mi", Modifier.weight(1f))
+                }
+            }
+            Text(
+                request.matchLabel,
+                color = CarsColors.Success,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFE7F8EF), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 9.dp)
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(onClick = onDeny, enabled = !busy, modifier = Modifier.weight(1f).height(52.dp)) {
+                    Text("Deny", fontWeight = FontWeight.Bold)
+                }
+                Button(
+                    onClick = onAccept,
+                    enabled = !busy,
+                    modifier = Modifier.weight(1f).height(52.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = CarsColors.Navy)
+                ) {
+                    Text("Accept", fontWeight = FontWeight.Black)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CompactInfo(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier
+            .background(CarsColors.Soft, RoundedCornerShape(999.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = CarsColors.Navy, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(label, color = CarsColors.Ink, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+fun UpcomingAssignmentCard(assignment: ManifestAssignment, onOpen: () -> Unit) {
+    val context = LocalContext.current
+    val trip = assignment.tripLeg
+    Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                trip.rideRequest.rider.initials(),
+                color = CarsColors.Navy,
+                fontWeight = FontWeight.Black,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(CarsColors.PaleBlue, RoundedCornerShape(999.dp))
+                    .padding(top = 14.dp)
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(trip.rideRequest.rider.fullName(), color = CarsColors.Ink, fontWeight = FontWeight.Black)
+                Text("${trip.rideRequest.purpose.prettyLabel()} · ${trip.scheduledPickupAt.prettyDateTime()}", color = CarsColors.Muted)
+                Text(trip.dropoffAddress.fullAddress(trip.dropoffCity, trip.dropoffState, trip.dropoffPostalCode), color = CarsColors.Navy, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onOpen) { Text("View") }
+                Button(
+                    onClick = {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(assignment.routeUrl())))
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = CarsColors.Navy)
+                ) {
+                    Text(if (assignment.status == "ACCEPTED") "Start trip" else "Navigate")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun UpcomingRideCard(ride: DriverRideSummary, onOpen: () -> Unit) {
+    Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                ride.riderName.initials(),
+                color = CarsColors.Navy,
+                fontWeight = FontWeight.Black,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(Color(0xFFE7F8EF), RoundedCornerShape(999.dp))
+                    .padding(top = 14.dp)
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(ride.riderName, color = CarsColors.Ink, fontWeight = FontWeight.Black)
+                Text("${ride.purpose.prettyLabel()} · ${ride.scheduledPickupAt.prettyDateTime()}", color = CarsColors.Muted)
+                Text(ride.dropoffAddress.fullAddress(ride.dropoffCity, null, null), color = CarsColors.Navy, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            OutlinedButton(onClick = onOpen) {
+                Text("View")
+            }
+        }
+    }
+}
+
+@Composable
+fun DriverToolsSettingsPanel(
+    onManifest: () -> Unit,
+    onAvailability: () -> Unit,
+    onVehicle: () -> Unit,
+    onMileage: () -> Unit,
+    onPay: () -> Unit,
+    onProfile: () -> Unit,
+    onSupport: () -> Unit,
+    onSettings: () -> Unit,
+    onCallCars: () -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Driver tools & settings", color = CarsColors.Navy, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                    Text("Manage your account, vehicle, mileage, reimbursements, and support.", color = CarsColors.Muted)
+                }
+                OutlinedButton(onClick = { expanded = !expanded }) {
+                    Text(if (expanded) "Close" else "Open")
+                }
+            }
+            if (expanded) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DashboardActionButton("Manifest", "Today", Icons.Default.DirectionsCar, Modifier.weight(1f), onManifest)
+                    DashboardActionButton("Availability", "Schedule", Icons.Default.Event, Modifier.weight(1f), onAvailability)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DashboardActionButton("Vehicle", "Insurance", Icons.Default.DirectionsCar, Modifier.weight(1f), onVehicle)
+                    DashboardActionButton("Mileage", "GPS", Icons.Default.LocationOn, Modifier.weight(1f), onMileage)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DashboardActionButton("Pay", "Reimbursements", Icons.Default.CheckCircle, Modifier.weight(1f), onPay)
+                    DashboardActionButton("Profile", "Contact", Icons.Default.Person, Modifier.weight(1f), onProfile)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DashboardActionButton("Support", "Call CARS", Icons.Default.Call, Modifier.weight(1f), onSupport)
+                    DashboardActionButton("Settings", "Cabinet", Icons.Default.Settings, Modifier.weight(1f), onSettings)
+                }
+                OutlinedButton(onClick = onCallCars, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                    Icon(Icons.Default.Call, contentDescription = null, tint = CarsColors.Red)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Call CARS dispatch", color = CarsColors.Red, fontWeight = FontWeight.Black)
+                }
+            }
+        }
     }
 }
 
@@ -2689,6 +3037,28 @@ fun String?.fullAddress(city: String?, state: String?, postalCode: String?): Str
     return listOfNotNull(this, city, state, postalCode).filter { it.isNotBlank() }.joinToString(", ")
 }
 
+fun String.initials(): String {
+    return split(Regex("\\s+"))
+        .filter { it.isNotBlank() }
+        .map { it.first().uppercaseChar() }
+        .joinToString("")
+        .take(2)
+        .ifBlank { "R" }
+}
+
+fun RiderSummary.fullName(): String = listOf(firstName, lastName).filter { it.isNotBlank() }.joinToString(" ").ifBlank { "Rider" }
+
+fun RiderSummary.initials(): String = fullName().initials()
+
+fun AvailableRideRequest.destinationLine(): String {
+    return listOfNotNull(destinationName, dropoffAddress.fullAddress(dropoffCity, dropoffState, dropoffPostalCode))
+        .filter { it.isNotBlank() }
+        .joinToString(" - ")
+        .ifBlank { "Destination pending" }
+}
+
+fun DriverAvailabilitySummary.availabilityWindowLabel(): String = "${formatTime(startsAt)} - ${formatTime(endsAt)}"
+
 fun String.urlEncode(): String = URLEncoder.encode(this, StandardCharsets.UTF_8.toString())
 
 fun String.prettyLabel(): String = split("_").joinToString(" ") { part ->
@@ -2736,6 +3106,26 @@ fun String.prettyDate(): String {
         OffsetDateTime.parse(this).format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
     }.recoverCatching {
         LocalDateTime.parse(this).format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
+    }.getOrDefault(take(10))
+}
+
+fun String.shortDayLabel(): String {
+    return runCatching {
+        val date = OffsetDateTime.parse(this).toLocalDate()
+        val today = LocalDate.now()
+        when (date) {
+            today -> "Today"
+            today.plusDays(1) -> "Tomorrow"
+            else -> OffsetDateTime.parse(this).format(DateTimeFormatter.ofPattern("MMM d"))
+        }
+    }.recoverCatching {
+        val date = LocalDateTime.parse(this).toLocalDate()
+        val today = LocalDate.now()
+        when (date) {
+            today -> "Today"
+            today.plusDays(1) -> "Tomorrow"
+            else -> LocalDateTime.parse(this).format(DateTimeFormatter.ofPattern("MMM d"))
+        }
     }.getOrDefault(take(10))
 }
 

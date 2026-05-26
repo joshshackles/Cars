@@ -55,6 +55,10 @@ class CarsApi(private val tokenProvider: () -> String?) {
         return get("/api/mobile/driver/tools", DriverToolsResponse.serializer())
     }
 
+    suspend fun availableRides(): AvailableRidesResponse {
+        return get("/api/mobile/driver/available-rides", AvailableRidesResponse.serializer())
+    }
+
     suspend fun updateDriverInfo(payload: DriverInfoUpdatePayload): DriverToolsResponse {
         return post(
             "/api/mobile/driver/tools",
@@ -89,6 +93,22 @@ class CarsApi(private val tokenProvider: () -> String?) {
 
     suspend fun acceptAssignment(assignmentId: String) {
         postRaw("/api/mobile/assignments/$assignmentId/accept", "{}")
+    }
+
+    suspend fun acceptAvailableRide(tripLegId: String): AvailableRideActionResult {
+        return post(
+            "/api/mobile/driver/available-rides/$tripLegId/accept",
+            "{}",
+            AvailableRideActionResult.serializer()
+        )
+    }
+
+    suspend fun denyAvailableRide(tripLegId: String, reason: String): AvailableRideActionResult {
+        return post(
+            "/api/mobile/driver/available-rides/$tripLegId/deny",
+            json.encodeToString(mapOf("reason" to reason)),
+            AvailableRideActionResult.serializer()
+        )
     }
 
     suspend fun declineAssignment(assignmentId: String, reason: String) {

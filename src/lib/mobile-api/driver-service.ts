@@ -21,6 +21,8 @@ type MileageRateSetting = {
   rateCents?: number;
 };
 
+const driverDeniedAvailableRideSubject = "Driver denied available ride";
+
 const allowedPortalTransitions: Record<string, PortalTripStatus[]> = {
   ASSIGNED: ["DRIVER_CONFIRMED", "EN_ROUTE", "NEEDS_ATTENTION"],
   DRIVER_CONFIRMED: ["EN_ROUTE", "NEEDS_ATTENTION"],
@@ -333,6 +335,264 @@ export async function getMobileDriverTools(context: MobileUserContext) {
       })),
     },
   };
+}
+
+export async function getRideRequestsForDriverAvailability(context: MobileUserContext) {
+  assertDriverPortalContext(context);
+  const now = new Date();
+  const horizon = new Date(now);
+  horizon.setDate(horizon.getDate() + 14);
+
+  const availabilityBlocks = await db.driverAvailability.findMany({
+    where: {
+      organizationId: context.membership.organizationId,
+      driverId: context.driver.id,
+      deletedAt: null,
+      status: "AVAILABLE",
+      startsAt: { lte: horizon },
+      endsAt: { gte: now },
+    },
+    orderBy: [{ startsAt: "asc" }],
+  });
+
+  const eligibleTripLegs = availabilityBlocks.length
+    ? await db.tripLeg.findMany({
+        where: {
+          organizationId: context.membership.organizationId,
+          deletedAt: null,
+          status: { in: ["PENDING", "READY_TO_ASSIGN"] },
+          scheduledPickupAt: { gte: now, lte: horizon },
+          assignment: null,
+          communicationLogs: {
+            none: {
+              driverId: context.driver.id,
+              subject: driverDeniedAvailableRideSubject,
+              deletedAt: null,
+            },
+          },
+          rideRequest: {
+            deletedAt: null,
+            status: { in: ["REQUESTED", "PENDING_REVIEW", "PENDING_ASSIGNMENT", "SCHEDULED"] },
+          },
+        },
+        include: {
+          dropoffDestination: { select: { name: true } },
+          rideRequest: {
+            include: {
+              rider: true,
+            },
+          },
+        },
+        orderBy: [{ scheduledPickupAt: "asc" }],
+        take: 40,
+      })
+    : [];
+
+  const matchingRequests = eligibleTripLegs
+    .filter((tripLeg) => availabilityBlocks.some((block) => tripMatchesAvailability(tripLeg, block)))
+    .slice(0, 10)
+    .map((tripLeg) => {
+      const riderName = tripLeg.rideRequest.rider.displayName;
+      const estimatedDurationMinutes = tripLeg.scheduledDropoffAt
+        ? Math.max(5, Math.round((tripLeg.scheduledDropoffAt.getTime() - tripLeg.scheduledPickupAt.getTime()) / 60000))
+        : null;
+
+      return {
+        id: tripLeg.id,
+        tripLegId: tripLeg.id,
+        rideRequestId: tripLeg.rideRequestId,
+        riderName,
+        riderInitials: initialsFor(riderName),
+        scheduledPickupAt: tripLeg.scheduledPickupAt.toISOString(),
+        scheduledDropoffAt: tripLeg.scheduledDropoffAt?.toISOString() ?? null,
+        purpose: tripLeg.rideRequest.purpose,
+        pickupAddress: tripLeg.pickupAddress,
+        pickupCity: tripLeg.pickupCity,
+        pickupCounty: tripLeg.pickupCounty,
+        pickupState: tripLeg.pickupState,
+        pickupPostalCode: tripLeg.pickupPostalCode,
+        destinationName: tripLeg.dropoffDestination?.name ?? null,
+        dropoffAddress: tripLeg.dropoffAddress,
+        dropoffCity: tripLeg.dropoffCity,
+        dropoffCounty: tripLeg.dropoffCounty,
+        dropoffState: tripLeg.dropoffState,
+        dropoffPostalCode: tripLeg.dropoffPostalCode,
+        estimatedDistanceMiles: tripLeg.estimatedMiles?.toString() ?? null,
+        estimatedDurationMinutes,
+        matchLabel: "Matches your availability",
+      };
+    });
+
+  const activeAvailability = availabilityBlocks.find((block) => block.startsAt <= now && block.endsAt >= now) ?? availabilityBlocks[0] ?? null;
+
+  return {
+    generatedAt: now.toISOString(),
+    availability: activeAvailability
+      ? {
+          id: activeAvailability.id,
+          status: activeAvailability.status,
+          availabilityType: activeAvailability.availabilityType,
+          startsAt: activeAvailability.startsAt.toISOString(),
+          endsAt: activeAvailability.endsAt.toISOString(),
+          preferredCounties: Array.isArray(activeAvailability.preferredCounties)
+            ? activeAvailability.preferredCounties.map(String)
+            : [],
+          maxDistanceMiles: activeAvailability.maxDistanceMiles,
+          notes: activeAvailability.notes,
+        }
+      : null,
+    matchingRequests,
+  };
+}
+
+export async function acceptAvailableRideRequest(context: MobileUserContext, tripLegId: string) {
+  assertDriverPortalContext(context);
+  const tripLeg = await getAvailableTripLeg(context, tripLegId);
+  const assignment = await db.$transaction(async (tx) => {
+    const existingAssignment = await tx.assignment.findFirst({
+      where: {
+        organizationId: context.membership.organizationId,
+        tripLegId: tripLeg.id,
+        deletedAt: null,
+      },
+    });
+
+    if (existingAssignment && existingAssignment.driverId !== context.driver.id) {
+      throw new Error("This ride has already been assigned to another driver.");
+    }
+
+    const nextAssignment =
+      existingAssignment ??
+      (await tx.assignment.create({
+        data: {
+          organizationId: context.membership.organizationId,
+          tripLegId: tripLeg.id,
+          driverId: context.driver.id,
+          status: "ACCEPTED",
+          respondedAt: new Date(),
+          createdById: context.user.id,
+          updatedById: context.user.id,
+        },
+      }));
+
+    if (existingAssignment) {
+      await tx.assignment.update({
+        where: { id: existingAssignment.id },
+        data: {
+          status: "ACCEPTED",
+          respondedAt: new Date(),
+          updatedById: context.user.id,
+        },
+      });
+    }
+
+    await tx.tripLeg.update({
+      where: { id: tripLeg.id },
+      data: {
+        status: "DRIVER_CONFIRMED",
+        updatedById: context.user.id,
+      },
+    });
+
+    await tx.rideRequest.update({
+      where: { id: tripLeg.rideRequestId },
+      data: {
+        status: "SCHEDULED",
+        updatedById: context.user.id,
+      },
+    });
+
+    await tx.statusHistory.create({
+      data: {
+        organizationId: context.membership.organizationId,
+        entityType: "Assignment",
+        entityId: nextAssignment.id,
+        oldStatus: existingAssignment?.status ?? "OFFERED",
+        newStatus: "ACCEPTED",
+        changedById: context.user.id,
+        riderId: tripLeg.rideRequest.riderId,
+        driverId: context.driver.id,
+        rideRequestId: tripLeg.rideRequestId,
+        tripLegId: tripLeg.id,
+        assignmentId: nextAssignment.id,
+        note: "Driver accepted available ride request from mobile dashboard.",
+      },
+    });
+
+    await tx.statusHistory.create({
+      data: {
+        organizationId: context.membership.organizationId,
+        entityType: "TripLeg",
+        entityId: tripLeg.id,
+        oldStatus: tripLeg.status,
+        newStatus: "DRIVER_CONFIRMED",
+        changedById: context.user.id,
+        riderId: tripLeg.rideRequest.riderId,
+        driverId: context.driver.id,
+        rideRequestId: tripLeg.rideRequestId,
+        tripLegId: tripLeg.id,
+        assignmentId: nextAssignment.id,
+        note: "Driver accepted available ride request from mobile dashboard.",
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        organizationId: context.membership.organizationId,
+        actorUserId: context.user.id,
+        action: "mobile.available_ride_accepted",
+        entityType: "TripLeg",
+        entityId: tripLeg.id,
+        riderId: tripLeg.rideRequest.riderId,
+        driverId: context.driver.id,
+        rideRequestId: tripLeg.rideRequestId,
+        tripLegId: tripLeg.id,
+        assignmentId: nextAssignment.id,
+      },
+    });
+
+    return nextAssignment;
+  });
+
+  return { assignmentId: assignment.id, tripLegId: tripLeg.id, status: "ACCEPTED" };
+}
+
+export async function denyAvailableRideRequest(context: MobileUserContext, tripLegId: string, reason?: string) {
+  assertDriverPortalContext(context);
+  const tripLeg = await getAvailableTripLeg(context, tripLegId);
+  const note = reason?.trim() || "Driver denied available ride from mobile dashboard.";
+
+  await db.communicationLog.create({
+    data: {
+      organizationId: context.membership.organizationId,
+      type: "NOTE",
+      subject: driverDeniedAvailableRideSubject,
+      body: note,
+      riderId: tripLeg.rideRequest.riderId,
+      driverId: context.driver.id,
+      rideRequestId: tripLeg.rideRequestId,
+      tripLegId: tripLeg.id,
+      createdById: context.user.id,
+      updatedById: context.user.id,
+    },
+  });
+
+  await db.auditLog.create({
+    data: {
+      organizationId: context.membership.organizationId,
+      actorUserId: context.user.id,
+      action: "mobile.available_ride_denied",
+      entityType: "TripLeg",
+      entityId: tripLeg.id,
+      riderId: tripLeg.rideRequest.riderId,
+      driverId: context.driver.id,
+      rideRequestId: tripLeg.rideRequestId,
+      tripLegId: tripLeg.id,
+      metadata: { reason: note },
+    },
+  });
+
+  return { tripLegId: tripLeg.id, status: "DENIED" };
 }
 
 export async function updateMobileDriverInfo(context: MobileUserContext, body: unknown) {
@@ -677,6 +937,71 @@ async function getMobileAssignment(context: DriverMobileUserContext, assignmentI
 }
 
 type MobileAssignment = Awaited<ReturnType<typeof getMobileAssignment>>;
+
+async function getAvailableTripLeg(context: DriverMobileUserContext, tripLegId: string) {
+  const tripLeg = await db.tripLeg.findFirstOrThrow({
+    where: {
+      id: tripLegId,
+      organizationId: context.membership.organizationId,
+      deletedAt: null,
+      status: { in: ["PENDING", "READY_TO_ASSIGN"] },
+      rideRequest: {
+        deletedAt: null,
+        status: { in: ["REQUESTED", "PENDING_REVIEW", "PENDING_ASSIGNMENT", "SCHEDULED"] },
+      },
+    },
+    include: {
+      assignment: true,
+      rideRequest: {
+        select: {
+          id: true,
+          riderId: true,
+        },
+      },
+    },
+  });
+
+  if (tripLeg.assignment && tripLeg.assignment.driverId !== context.driver.id) {
+    throw new Error("This ride has already been assigned to another driver.");
+  }
+
+  return tripLeg;
+}
+
+function tripMatchesAvailability(
+  tripLeg: { scheduledPickupAt: Date; pickupCounty: string | null; dropoffCounty: string | null },
+  availability: { startsAt: Date; endsAt: Date; preferredCounties: Prisma.JsonValue }
+) {
+  if (tripLeg.scheduledPickupAt < availability.startsAt || tripLeg.scheduledPickupAt > availability.endsAt) {
+    return false;
+  }
+
+  const preferredCounties = Array.isArray(availability.preferredCounties)
+    ? availability.preferredCounties.map((county) => String(county).toLowerCase())
+    : [];
+
+  if (preferredCounties.length === 0) {
+    return true;
+  }
+
+  const pickupCounty = tripLeg.pickupCounty?.toLowerCase();
+  const dropoffCounty = tripLeg.dropoffCounty?.toLowerCase();
+
+  return Boolean(
+    (pickupCounty && preferredCounties.includes(pickupCounty)) ||
+      (dropoffCounty && preferredCounties.includes(dropoffCounty))
+  );
+}
+
+function initialsFor(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
 
 async function createLocationPing(context: DriverMobileUserContext, assignment: MobileAssignment, location: LocationInput) {
   return db.driverLocationPing.create({
